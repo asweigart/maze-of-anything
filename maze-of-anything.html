@@ -1,0 +1,1423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Maze of Anything</title>
+<style>
+/* ────────────────────────────────────────────────────────────────────────────
+   Theme variables. JS toggles a `theme-light` / `theme-dark` class on <html>
+   and overrides --bg / --fg via inline styles when the user picks custom
+   colors. `prefers-color-scheme` is read once at startup and on every change
+   when the theme mode is "auto".
+   ────────────────────────────────────────────────────────────────────────── */
+:root {
+  --accent: #ff7a59;
+  --danger: #e53e3e;
+  --radius: 6px;
+  --pad: 8px;
+}
+html.theme-dark {
+  --bg: #111418;
+  --fg: #e8eaed;
+  --panel: #1c2026;
+  --panel-fg: #e8eaed;
+  --border: #2a2f37;
+  --muted: #8a929c;
+  --input-bg: #0f1216;
+}
+html.theme-light {
+  --bg: #fafafa;
+  --fg: #1c2026;
+  --panel: #ffffff;
+  --panel-fg: #1c2026;
+  --border: #d8dde3;
+  --muted: #6b7280;
+  --input-bg: #ffffff;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100dvh;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: var(--pad);
+  padding: var(--pad) calc(var(--pad) * 1.5);
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+header h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+header .toolbar { display: flex; gap: 4px; flex-wrap: wrap; flex: 1 1 auto; }
+header .spacer { flex: 1 1 auto; }
+
+button, .btn {
+  background: var(--panel);
+  color: var(--panel-fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+}
+button:hover { border-color: var(--accent); }
+button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+button.danger { color: var(--danger); }
+
+input[type=range] { accent-color: var(--accent); }
+input[type=number], input[type=text], select {
+  background: var(--input-bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 6px;
+  font-size: 13px;
+  font-family: inherit;
+}
+input[type=color] {
+  width: 32px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--input-bg);
+  padding: 0;
+  cursor: pointer;
+}
+label { font-size: 13px; }
+hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+.row { display: flex; align-items: center; gap: 6px; margin: 4px 0; flex-wrap: wrap; }
+.row > label { min-width: 90px; }
+
+main {
+  position: relative;
+  overflow: hidden;
+}
+
+#mazeCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  touch-action: none; /* we handle all gestures ourselves */
+  cursor: grab;
+}
+#mazeCanvas.grabbing { cursor: grabbing; }
+#mazeCanvas.crosshair { cursor: crosshair; }
+
+/* ── Empty-state hint shown until an image is loaded ───────────────────── */
+#emptyHint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  pointer-events: none;
+  color: var(--muted);
+  padding: 20px;
+}
+#emptyHint h2 { margin: 0 0 8px; color: var(--fg); }
+#emptyHint p { margin: 4px 0; }
+
+/* ── Toast for transient messages ──────────────────────────────────────── */
+#toast {
+  position: absolute;
+  bottom: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+  z-index: 50;
+  max-width: 80%;
+  text-align: center;
+}
+#toast.show { opacity: 1; }
+
+/* ── Settings drawer ───────────────────────────────────────────────────── */
+#settingsPanel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: min(340px, 90vw);
+  height: 100%;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  padding: var(--pad);
+  overflow-y: auto;
+  transform: translateX(100%);
+  transition: transform 0.2s;
+  z-index: 40;
+}
+#settingsPanel.open { transform: translateX(0); }
+#settingsPanel h3 {
+  margin: 8px 0 4px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+#settingsPanel .help {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 4px 0;
+}
+
+/* ── Wall color swatches ───────────────────────────────────────────────── */
+#wallList { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px 4px 2px 6px;
+  font-size: 12px;
+}
+.swatch .chip {
+  width: 16px; height: 16px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+.swatch button {
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* ── On-screen D-pad ───────────────────────────────────────────────────── */
+#mobileDpad {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  display: grid;
+  grid-template-columns: 44px 44px 44px;
+  grid-template-rows: 44px 44px 44px;
+  gap: 4px;
+  z-index: 30;
+  touch-action: none;
+}
+#mobileDpad button {
+  background: rgba(128, 128, 128, 0.35);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  font-size: 18px;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+}
+#mobileDpad button.pressed { background: var(--accent); }
+#mobileDpad .dp-up    { grid-column: 2; grid-row: 1; }
+#mobileDpad .dp-left  { grid-column: 1; grid-row: 2; }
+#mobileDpad .dp-down  { grid-column: 2; grid-row: 3; }
+#mobileDpad .dp-right { grid-column: 3; grid-row: 2; }
+#mobileDpad .dp-mid   { grid-column: 2; grid-row: 2; visibility: hidden; }
+
+/* ── Undo slider, big and thumb-friendly ───────────────────────────────── */
+#undoSliderWrap {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  right: 180px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+#undoSliderWrap label { font-size: 12px; color: var(--muted); }
+#undoSlider {
+  width: 100%;
+  height: 32px;
+  margin: 0;
+}
+
+/* ── Status overlay (e.g. "Click to set start") ────────────────────────── */
+#modeBanner {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--accent);
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  z-index: 35;
+  display: none;
+}
+#modeBanner.show { display: block; }
+
+/* ── Narrow viewport tweaks ───────────────────────────────────────────── */
+@media (max-width: 600px) {
+  header h1 { font-size: 14px; }
+  header button { padding: 4px 6px; font-size: 12px; }
+  #undoSliderWrap { right: 16px; bottom: 168px; } /* sit above the dpad */
+}
+
+/* Hide native file input visually */
+.hidden-file { display: none; }
+</style>
+</head>
+<body>
+  <!-- ────────────────────────────────────────────────────────────────────
+       Top toolbar with primary actions. Settings live in the right drawer
+       which slides in/out via the gear button.
+       ──────────────────────────────────────────────────────────────────── -->
+  <header>
+    <h1>Maze of Anything</h1>
+    <div class="toolbar">
+      <button id="btnUpload" title="Upload image or .json export">Upload</button>
+      <button id="btnExport" title="Download current state as .json">Export</button>
+      <button id="btnReposition" title="Click on the maze to teleport the player">Reposition</button>
+      <button id="btnEyedrop" title="Click on the maze to add a wall color">Eyedrop wall</button>
+      <button id="btnResetView" title="Recenter and zoom to fit">Fit view</button>
+      <button id="btnSettings" title="Open settings panel">⚙ Settings</button>
+    </div>
+    <input type="file" id="fileInput" class="hidden-file" accept="image/*,.json,application/json">
+  </header>
+
+  <main>
+    <canvas id="mazeCanvas"></canvas>
+
+    <div id="emptyHint">
+      <h2>Maze of Anything</h2>
+      <p>Upload, drag-drop, or paste (Ctrl/⌘+V) a maze image to begin.</p>
+      <p>You can also import a previously exported <code>.json</code> file.</p>
+    </div>
+
+    <div id="modeBanner"></div>
+    <div id="toast"></div>
+
+    <!-- D-pad: pointer events let the same handler serve mouse and touch.
+         Two adjacent buttons can be pressed simultaneously on multi-touch
+         to walk diagonally. -->
+    <div id="mobileDpad" aria-label="Movement controls">
+      <button class="dp-up"    data-dir="up"    aria-label="Up">▲</button>
+      <button class="dp-left"  data-dir="left"  aria-label="Left">◀</button>
+      <button class="dp-mid"   aria-hidden="true"></button>
+      <button class="dp-right" data-dir="right" aria-label="Right">▶</button>
+      <button class="dp-down"  data-dir="down"  aria-label="Down">▼</button>
+    </div>
+
+    <!-- Undo slider: snaps to 0 on release, retraces while held > 0. -->
+    <div id="undoSliderWrap">
+      <label for="undoSlider">Undo (hold and release to stop)</label>
+      <input type="range" id="undoSlider" min="0" max="100" value="0" step="1">
+    </div>
+
+    <!-- ────────────────────────────────────────────────────────────────
+         Settings drawer. Every input has an id used by JS to bind state.
+         ──────────────────────────────────────────────────────────────── -->
+    <aside id="settingsPanel">
+      <h3>View</h3>
+      <div class="row">
+        <label>Zoom</label>
+        <input type="range" id="zoomSlider" min="0.1" max="10" step="0.05" value="1" style="flex:1">
+        <button id="btnZoomOut">−</button>
+        <button id="btnZoomIn">+</button>
+      </div>
+      <div class="row">
+        <label>Rotation</label>
+        <input type="range" id="rotateSlider" min="-180" max="180" step="1" value="0" style="flex:1">
+        <button id="btnRotL" title="Rotate −90°">⟲</button>
+        <button id="btnRotR" title="Rotate +90°">⟳</button>
+      </div>
+      <div class="row">
+        <button id="btnResetView2">Reset view</button>
+        <button id="btnSetStart">Set start</button>
+      </div>
+
+      <hr>
+      <h3>Player</h3>
+      <div class="row">
+        <label>Speed (px/s)</label>
+        <input type="number" id="speedInput" min="10" max="2000" step="10" value="80" style="width:80px">
+      </div>
+      <div class="row">
+        <label>Radius (px)</label>
+        <input type="number" id="radiusInput" min="1" max="50" step="1" value="6" style="width:60px">
+      </div>
+      <div class="row">
+        <label>Color</label>
+        <input type="color" id="playerColor" value="#ff7a59">
+      </div>
+
+      <hr>
+      <h3>Walls</h3>
+      <p class="help">Pixels matching any wall color (within tolerance) are impassable. Click "Eyedrop wall" then click a pixel on the maze to add a color.</p>
+      <div class="row">
+        <label>Tolerance</label>
+        <input type="range" id="toleranceSlider" min="0" max="200" step="1" value="64" style="flex:1">
+        <span id="toleranceVal">64</span>
+      </div>
+      <div id="wallList"></div>
+      <div class="row">
+        <button id="btnEyedrop2">Eyedrop wall</button>
+        <button id="btnClearWalls" class="danger">Clear all</button>
+      </div>
+
+      <hr>
+      <h3>Path</h3>
+      <div class="row">
+        <label>Visible</label>
+        <input type="checkbox" id="pathVisible" checked>
+      </div>
+      <div class="row">
+        <label>Color</label>
+        <input type="color" id="pathColor" value="#ff7a59">
+      </div>
+      <div class="row">
+        <label>Width</label>
+        <input type="number" id="pathWidth" min="1" max="20" step="1" value="2" style="width:60px">
+      </div>
+      <div class="row">
+        <label>Style</label>
+        <select id="pathDash">
+          <option value="solid">Solid</option>
+          <option value="dashed">Dashed</option>
+          <option value="dotted">Dotted</option>
+        </select>
+      </div>
+      <div class="row">
+        <button id="btnClearPath" class="danger">Erase recorded path</button>
+      </div>
+
+      <hr>
+      <h3>Theme</h3>
+      <div class="row">
+        <label>Mode</label>
+        <select id="themeMode">
+          <option value="auto">Auto (browser)</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Background</label>
+        <input type="color" id="bgColor">
+        <button id="bgReset" title="Use mode default">⟲</button>
+      </div>
+      <div class="row">
+        <label>Text</label>
+        <input type="color" id="fgColor">
+        <button id="fgReset" title="Use mode default">⟲</button>
+      </div>
+
+      <hr>
+      <h3>Storage</h3>
+      <p class="help">State auto-saves to your browser. To share a fresh maze, fully rewind the undo slider before exporting.</p>
+      <div class="row">
+        <button id="btnReset" class="danger">Reset everything</button>
+      </div>
+
+      <hr>
+      <div class="row" style="justify-content:flex-end">
+        <button id="btnCloseSettings">Close</button>
+      </div>
+    </aside>
+  </main>
+
+<script>
+"use strict";
+
+/* ════════════════════════════════════════════════════════════════════════
+   MAZE OF ANYTHING
+   A single-file, offline, browser-based maze toy. Load any image, configure
+   what counts as a wall, then walk a colored dot through the open spaces
+   with WASD/arrows or an on-screen D-pad. Hold the undo slider to retrace
+   your path. State exports to a single JSON file that can be re-imported.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ─── 1. Constants ───────────────────────────────────────────────────────
+   Tunable knobs. MAX_REWIND_PX_PER_SEC controls how fast a fully-pulled
+   undo slider rewinds. STORAGE_KEY is the localStorage slot. STATE_VERSION
+   guards against importing an incompatible older export. */
+const STATE_VERSION = 1;
+const STORAGE_KEY = "maze-of-anything:v1";
+const MAX_REWIND_PX_PER_SEC = 600;
+const SAVE_DEBOUNCE_MS = 500;
+const TOAST_MS = 2200;
+
+/* ─── 2. State ───────────────────────────────────────────────────────────
+   Single source of truth. Everything serializable lives here; everything
+   in this object is exported, persisted, and restored verbatim on import.
+   Anything beginning with `_` is runtime-only and not serialized. */
+function defaultState() {
+  return {
+    version: STATE_VERSION,
+    image: null, // { dataUrl, naturalWidth, naturalHeight }
+    walls: [{ r: 0, g: 0, b: 0 }], // pre-seeded with "black", widened by tolerance
+    tolerance: 64,
+    player: { x: 0, y: 0, radius: 6, color: "#ff7a59", speed: 80 },
+    start: { x: 0, y: 0 },
+    hasStart: false, // becomes true after the user picks a start position
+    path: [], // [{ kind: 'move'|'jump', points: [{x,y}, ...] }]
+    view: { zoom: 1, panX: 0, panY: 0, rotationDeg: 0 },
+    pathStyle: { visible: true, color: "#ff7a59", width: 2, dash: "solid" },
+    theme: { mode: "auto", bg: null, fg: null },
+  };
+}
+let state = defaultState();
+
+// Runtime-only state. The image element + cached pixel data are heavy and
+// derived from state.image, so they're kept here instead of in `state`.
+const rt = {
+  imgEl: null,         // HTMLImageElement once loaded
+  pixelData: null,     // Uint8ClampedArray of RGBA bytes, length = w*h*4
+  imgW: 0,
+  imgH: 0,
+  mode: "play",        // "play" | "set-start" | "reposition" | "eyedrop"
+  keys: new Set(),     // currently-held movement keys (normalized to 'up'|'down'|'left'|'right')
+  dpad: new Set(),     // pointer-down d-pad directions
+  undoValue: 0,        // 0..100, latest undo slider value
+  panning: false,
+  panLast: null,       // {x,y} last pointer position during pan
+  panMoved: false,
+  pinch: null,         // {dist, midpoint, zoomStart, panStart} for two-finger gesture
+  saveTimer: null,
+  dpr: 1,
+  cssW: 0,
+  cssH: 0,
+};
+
+/* ─── 3. DOM cache ─────────────────────────────────────────────────────── */
+const $ = (id) => document.getElementById(id);
+const canvas = $("mazeCanvas");
+const ctx = canvas.getContext("2d");
+const emptyHint = $("emptyHint");
+const toastEl = $("toast");
+const modeBanner = $("modeBanner");
+const wallListEl = $("wallList");
+
+/* ─── 4. Toast helper ──────────────────────────────────────────────────── */
+let toastTimer = null;
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove("show"), TOAST_MS);
+}
+
+/* ─── 5. Theme ────────────────────────────────────────────────────────────
+   Resolved theme = state.theme.mode (with "auto" mapped via media query),
+   then optional bg/fg overrides applied as inline CSS variables on <html>. */
+const mql = window.matchMedia("(prefers-color-scheme: dark)");
+function applyTheme() {
+  const root = document.documentElement;
+  const mode = state.theme.mode === "auto" ? (mql.matches ? "dark" : "light") : state.theme.mode;
+  root.classList.toggle("theme-dark", mode === "dark");
+  root.classList.toggle("theme-light", mode === "light");
+  // Inline overrides (or clear them when null)
+  if (state.theme.bg) root.style.setProperty("--bg", state.theme.bg);
+  else root.style.removeProperty("--bg");
+  if (state.theme.fg) root.style.setProperty("--fg", state.theme.fg);
+  else root.style.removeProperty("--fg");
+  // Reflect in settings inputs
+  $("themeMode").value = state.theme.mode;
+  $("bgColor").value = state.theme.bg || (mode === "dark" ? "#111418" : "#fafafa");
+  $("fgColor").value = state.theme.fg || (mode === "dark" ? "#e8eaed" : "#1c2026");
+}
+mql.addEventListener("change", () => { if (state.theme.mode === "auto") applyTheme(); });
+
+/* ─── 6. Persistence ──────────────────────────────────────────────────────
+   Debounced save. localStorage typically caps around 5MB; if the serialized
+   blob (which includes the image dataUrl) exceeds that, fall back to saving
+   without the image so at least settings/path persist. */
+function scheduleSave() {
+  clearTimeout(rt.saveTimer);
+  rt.saveTimer = setTimeout(saveNow, SAVE_DEBOUNCE_MS);
+}
+function saveNow() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {
+    // Probably QuotaExceededError. Try again without the bulky image.
+    try {
+      const lite = { ...state, image: null };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(lite));
+      toast("Image too large to autosave; settings saved.");
+    } catch (e2) {
+      toast("Could not save state to browser storage.");
+    }
+  }
+}
+function loadFromStorage() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.version !== STATE_VERSION) return false;
+    adoptState(parsed);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/* ─── 7. Coordinate transforms ───────────────────────────────────────────
+   Image space ↔ canvas space. The image is drawn with the matrix:
+     translate(panX, panY)  rotate(rad)  scale(zoom)  translate(-cx, -cy)
+   so the image *center* sits at canvas (panX, panY) before rotation.
+   We never bake DPR into the matrix; everything below is in CSS pixels.   */
+function imgCenter() { return { x: rt.imgW / 2, y: rt.imgH / 2 }; }
+function imageToCanvas(ix, iy) {
+  const c = imgCenter();
+  const z = state.view.zoom;
+  const rad = state.view.rotationDeg * Math.PI / 180;
+  let x = (ix - c.x) * z;
+  let y = (iy - c.y) * z;
+  const cs = Math.cos(rad), sn = Math.sin(rad);
+  const rx = x * cs - y * sn;
+  const ry = x * sn + y * cs;
+  return { x: rx + state.view.panX, y: ry + state.view.panY };
+}
+function canvasToImage(cx, cy) {
+  const c = imgCenter();
+  const z = state.view.zoom;
+  const rad = -state.view.rotationDeg * Math.PI / 180;
+  let x = cx - state.view.panX;
+  let y = cy - state.view.panY;
+  const cs = Math.cos(rad), sn = Math.sin(rad);
+  const rx = x * cs - y * sn;
+  const ry = x * sn + y * cs;
+  return { x: rx / z + c.x, y: ry / z + c.y };
+}
+// Convert a browser event's clientX/clientY to canvas-space CSS pixels.
+function eventToCanvas(ev) {
+  const r = canvas.getBoundingClientRect();
+  return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+}
+
+/* ─── 8. Image loading + offscreen pixel cache ───────────────────────────
+   loadImageFromDataUrl is called both after a fresh upload and on import.
+   The pixel cache is the authoritative source for wall checks; we draw the
+   image into an offscreen canvas at native resolution, then keep the RGBA
+   bytes around. Drawing to a canvas can taint cross-origin images, but
+   files-the-user-picks (data URLs) are always same-origin. */
+function loadImageFromDataUrl(dataUrl, onReady, skipFit) {
+  const img = new Image();
+  img.onload = () => {
+    rt.imgEl = img;
+    rt.imgW = img.naturalWidth;
+    rt.imgH = img.naturalHeight;
+    // Build pixel cache
+    const off = document.createElement("canvas");
+    off.width = rt.imgW;
+    off.height = rt.imgH;
+    const offCtx = off.getContext("2d", { willReadFrequently: true });
+    offCtx.drawImage(img, 0, 0);
+    try {
+      rt.pixelData = offCtx.getImageData(0, 0, rt.imgW, rt.imgH).data;
+    } catch (e) {
+      toast("Could not read image pixels (CORS?). Wall detection disabled.");
+      rt.pixelData = null;
+    }
+    state.image = { dataUrl, naturalWidth: rt.imgW, naturalHeight: rt.imgH };
+    emptyHint.style.display = "none";
+    if (!skipFit) fitView();
+    if (onReady) onReady();
+    requestRender();
+    scheduleSave();
+  };
+  img.onerror = () => toast("Failed to decode image.");
+  img.src = dataUrl;
+}
+
+function loadFile(file) {
+  // Branch: JSON export vs raw image. We sniff by extension+type, and as a
+  // fallback peek at the first byte after reading.
+  const isJson = /\.json$/i.test(file.name) || file.type === "application/json";
+  if (isJson) {
+    const fr = new FileReader();
+    fr.onload = () => {
+      try { importStateJson(fr.result); }
+      catch (e) { toast("Invalid JSON: " + e.message); }
+    };
+    fr.readAsText(file);
+    return;
+  }
+  if (!file.type.startsWith("image/")) {
+    toast("Unsupported file type: " + (file.type || "unknown"));
+    return;
+  }
+  const fr = new FileReader();
+  fr.onload = () => {
+    // Fresh image: reset only image-specific state. Preserve user prefs
+    // (theme, path style, player color/radius/speed) across uploads so the
+    // user doesn't have to reconfigure them every time.
+    const def = defaultState();
+    state.image = null;
+    state.walls = def.walls;
+    state.tolerance = def.tolerance;
+    state.path = [];
+    state.start = { x: 0, y: 0 };
+    state.player.x = 0;
+    state.player.y = 0;
+    state.view = def.view;
+    state.hasStart = false;
+    bindStateToInputs();
+    loadImageFromDataUrl(fr.result, () => enterMode("set-start"));
+  };
+  fr.readAsDataURL(file);
+}
+
+/* ─── 9. Wall detection ──────────────────────────────────────────────────
+   isWall(ix, iy) checks one pixel against every wall color. Out-of-bounds
+   pixels are treated as wall so the player can't walk off the image.
+   Tolerance is compared against squared Euclidean RGB distance (cheaper
+   than sqrt; we square the threshold once below). */
+function isWall(ix, iy) {
+  if (!rt.pixelData) return false; // no pixel data → nothing blocks
+  const x = ix | 0, y = iy | 0;
+  if (x < 0 || y < 0 || x >= rt.imgW || y >= rt.imgH) return true;
+  const i = (y * rt.imgW + x) * 4;
+  const r = rt.pixelData[i], g = rt.pixelData[i + 1], b = rt.pixelData[i + 2];
+  const tol2 = state.tolerance * state.tolerance;
+  for (const w of state.walls) {
+    const dr = r - w.r, dg = g - w.g, db = b - w.b;
+    if (dr * dr + dg * dg + db * db <= tol2) return true;
+  }
+  return false;
+}
+
+// Player collision: sample center plus 8 perimeter points of the player
+// circle. Any wall hit blocks movement. This means the player can squeeze
+// through gaps as small as ~radius pixels (good enough for typical mazes).
+const COLLISION_DIRS = (() => {
+  const out = [{ x: 0, y: 0 }];
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    out.push({ x: Math.cos(a), y: Math.sin(a) });
+  }
+  return out;
+})();
+function playerCollides(x, y) {
+  const r = state.player.radius;
+  for (const d of COLLISION_DIRS) {
+    if (isWall(x + d.x * r, y + d.y * r)) return true;
+  }
+  return false;
+}
+
+/* ─── 10. Render loop ────────────────────────────────────────────────────
+   We re-render every frame regardless of whether anything changed; the
+   per-frame cost is dominated by drawImage which is cheap and GPU-backed.
+   This avoids a fragile dirty-flag system. */
+let renderRequested = false;
+function requestRender() { renderRequested = true; }
+
+function fitCanvasSize() {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.floor(rect.width * dpr));
+  const h = Math.max(1, Math.floor(rect.height * dpr));
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+  }
+  rt.dpr = dpr;
+  rt.cssW = rect.width;
+  rt.cssH = rect.height;
+}
+
+function fitView() {
+  // Center the image and scale to fit the visible canvas.
+  if (!rt.imgEl) return;
+  fitCanvasSize();
+  const pad = 20;
+  const z = Math.min((rt.cssW - pad) / rt.imgW, (rt.cssH - pad) / rt.imgH, 4);
+  state.view.zoom = z > 0.05 ? z : 0.05;
+  state.view.rotationDeg = 0;
+  state.view.panX = rt.cssW / 2;
+  state.view.panY = rt.cssH / 2;
+  $("zoomSlider").value = state.view.zoom;
+  $("rotateSlider").value = 0;
+  scheduleSave();
+}
+
+function dashFor(style, lineWidth) {
+  if (style === "dashed") return [Math.max(4, lineWidth * 3), Math.max(3, lineWidth * 2)];
+  if (style === "dotted") return [0, Math.max(2, lineWidth * 2)];
+  return [];
+}
+
+function render() {
+  fitCanvasSize();
+  // Clear with background color
+  const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() || "#111";
+  ctx.setTransform(rt.dpr, 0, 0, rt.dpr, 0, 0);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, rt.cssW, rt.cssH);
+
+  if (!rt.imgEl) return;
+
+  // Apply view transform (CSS pixels)
+  ctx.save();
+  ctx.translate(state.view.panX, state.view.panY);
+  ctx.rotate(state.view.rotationDeg * Math.PI / 180);
+  ctx.scale(state.view.zoom, state.view.zoom);
+  const c = imgCenter();
+  ctx.translate(-c.x, -c.y);
+
+  // Image
+  ctx.imageSmoothingEnabled = state.view.zoom < 1.5;
+  ctx.drawImage(rt.imgEl, 0, 0);
+
+  // Path. Line widths and dash patterns are specified in image-space units,
+  // then scaled by 1/zoom so they appear constant on screen.
+  if (state.pathStyle.visible && state.path.length > 0) {
+    const wScreen = state.pathStyle.width;
+    const wImg = wScreen / state.view.zoom;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = wImg;
+    ctx.strokeStyle = state.pathStyle.color;
+    for (const seg of state.path) {
+      if (seg.points.length < 2) continue;
+      const dash = seg.kind === "jump"
+        ? dashFor("dashed", wScreen).map(v => v / state.view.zoom)
+        : dashFor(state.pathStyle.dash, wScreen).map(v => v / state.view.zoom);
+      ctx.setLineDash(dash);
+      ctx.beginPath();
+      ctx.moveTo(seg.points[0].x, seg.points[0].y);
+      for (let i = 1; i < seg.points.length; i++) {
+        ctx.lineTo(seg.points[i].x, seg.points[i].y);
+      }
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  // Player dot
+  if (state.hasStart) {
+    ctx.beginPath();
+    ctx.arc(state.player.x, state.player.y, state.player.radius, 0, Math.PI * 2);
+    ctx.fillStyle = state.player.color;
+    ctx.fill();
+    ctx.lineWidth = Math.max(0.5, 1 / state.view.zoom);
+    ctx.strokeStyle = "rgba(0,0,0,0.6)";
+    ctx.stroke();
+  }
+
+  // Start marker (small ring)
+  if (state.hasStart) {
+    ctx.beginPath();
+    ctx.arc(state.start.x, state.start.y, Math.max(state.player.radius * 0.5, 2), 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(1, 2 / state.view.zoom);
+    ctx.strokeStyle = "rgba(255,255,255,0.6)";
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+/* ─── 11. Movement + path recording ──────────────────────────────────────
+   The same loop drives both forward movement (from keys / d-pad) and the
+   undo-rewind. Forward movement creates / extends a "move" segment; the
+   rewind walks backward through whatever segments exist. */
+let lastTs = 0;
+function frame(ts) {
+  const dt = lastTs ? Math.min(0.05, (ts - lastTs) / 1000) : 0;
+  lastTs = ts;
+
+  if (state.hasStart && rt.mode === "play") {
+    if (rt.undoValue > 0) {
+      const dist = (rt.undoValue / 100) * MAX_REWIND_PX_PER_SEC * dt;
+      rewindByDistance(dist);
+      requestRender();
+    } else {
+      const dir = currentDirection();
+      if (dir.x !== 0 || dir.y !== 0) {
+        movePlayer(dir.x * state.player.speed * dt, dir.y * state.player.speed * dt);
+        requestRender();
+      }
+    }
+  }
+
+  if (renderRequested) {
+    renderRequested = false;
+    render();
+  }
+  requestAnimationFrame(frame);
+}
+
+function currentDirection() {
+  let dx = 0, dy = 0;
+  const all = new Set([...rt.keys, ...rt.dpad]);
+  if (all.has("up")) dy -= 1;
+  if (all.has("down")) dy += 1;
+  if (all.has("left")) dx -= 1;
+  if (all.has("right")) dx += 1;
+  if (dx === 0 && dy === 0) return { x: 0, y: 0 };
+  const len = Math.hypot(dx, dy);
+  return { x: dx / len, y: dy / len };
+}
+
+function movePlayer(dx, dy) {
+  // Try the full move first; if blocked, try axis-aligned slide.
+  const fromX = state.player.x, fromY = state.player.y;
+  let toX, toY;
+  if (!playerCollides(fromX + dx, fromY + dy)) {
+    toX = fromX + dx; toY = fromY + dy;
+  } else if (dx !== 0 && !playerCollides(fromX + dx, fromY)) {
+    toX = fromX + dx; toY = fromY;
+  } else if (dy !== 0 && !playerCollides(fromX, fromY + dy)) {
+    toX = fromX; toY = fromY + dy;
+  } else {
+    return; // fully blocked
+  }
+  state.player.x = toX;
+  state.player.y = toY;
+  recordMove(fromX, fromY, toX, toY);
+}
+
+function currentSegment() {
+  return state.path.length ? state.path[state.path.length - 1] : null;
+}
+// Append a move from (fromX,fromY) to (toX,toY). When a new segment is
+// created (after a teleport, fresh start, or empty path) the FROM point is
+// the segment's anchor — recording the TO point alone would lose the very
+// first pixel of motion and a full rewind would land one pixel off-start.
+function recordMove(fromX, fromY, toX, toY) {
+  let seg = currentSegment();
+  if (!seg || seg.kind !== "move") {
+    seg = { kind: "move", points: [{ x: fromX, y: fromY }] };
+    state.path.push(seg);
+  }
+  const last = seg.points[seg.points.length - 1];
+  if (Math.hypot(toX - last.x, toY - last.y) >= 1) {
+    seg.points.push({ x: toX, y: toY });
+    scheduleSave();
+  }
+}
+
+/* ─── 12. Undo: walk backward along the recorded path ───────────────────
+   Distance budget `d` (in image pixels) is consumed segment by segment,
+   leg by leg. As we pass each waypoint we pop it; when a partial leg is
+   consumed the tail point is moved in place so the rendered path shrinks
+   smoothly. Jump segments are interpolated like any other 2-point leg. */
+function rewindByDistance(d) {
+  while (d > 0 && state.path.length > 0) {
+    const seg = state.path[state.path.length - 1];
+    if (seg.points.length < 2) {
+      state.path.pop();
+      const prev = state.path[state.path.length - 1];
+      if (prev) {
+        const p = prev.points[prev.points.length - 1];
+        state.player.x = p.x;
+        state.player.y = p.y;
+      }
+      continue;
+    }
+    const tail = seg.points[seg.points.length - 1];
+    const prev = seg.points[seg.points.length - 2];
+    const dx = tail.x - prev.x, dy = tail.y - prev.y;
+    const segLen = Math.hypot(dx, dy);
+    if (segLen <= d) {
+      seg.points.pop();
+      state.player.x = prev.x;
+      state.player.y = prev.y;
+      d -= segLen;
+      if (seg.points.length < 2) {
+        state.path.pop();
+      }
+    } else {
+      const t = d / segLen;
+      tail.x = tail.x - dx * t;
+      tail.y = tail.y - dy * t;
+      state.player.x = tail.x;
+      state.player.y = tail.y;
+      d = 0;
+    }
+  }
+  scheduleSave();
+}
+
+/* ─── 13. Mode switching (set-start / reposition / eyedrop) ──────────── */
+function enterMode(mode, message) {
+  rt.mode = mode;
+  if (mode === "play") {
+    modeBanner.classList.remove("show");
+    canvas.classList.remove("crosshair");
+  } else {
+    modeBanner.textContent = message || ({
+      "set-start": "Click on the maze to set the start position.",
+      "reposition": "Click on the maze to teleport the player.",
+      "eyedrop": "Click on a wall pixel to add it as a wall color.",
+    })[mode];
+    modeBanner.classList.add("show");
+    canvas.classList.add("crosshair");
+  }
+  // Toggle button highlights
+  $("btnReposition").classList.toggle("active", mode === "reposition");
+  $("btnEyedrop").classList.toggle("active", mode === "eyedrop");
+  $("btnSetStart").classList.toggle("active", mode === "set-start");
+  $("btnEyedrop2").classList.toggle("active", mode === "eyedrop");
+}
+
+function setStartAt(ix, iy) {
+  state.start = { x: ix, y: iy };
+  state.player.x = ix;
+  state.player.y = iy;
+  state.path = []; // fresh maze gets a fresh path
+  state.hasStart = true;
+  enterMode("play");
+  requestRender();
+  scheduleSave();
+}
+
+function repositionAt(ix, iy) {
+  // Record a "jump" segment from the current player to the new spot. If the
+  // current path's tail is at the same point we don't add a duplicate.
+  const from = { x: state.player.x, y: state.player.y };
+  const to = { x: ix, y: iy };
+  state.path.push({ kind: "jump", points: [from, to] });
+  state.player.x = ix;
+  state.player.y = iy;
+  enterMode("play");
+  requestRender();
+  scheduleSave();
+}
+
+function eyedropAt(ix, iy) {
+  if (!rt.pixelData) { toast("No pixel data available."); return; }
+  const x = Math.max(0, Math.min(rt.imgW - 1, ix | 0));
+  const y = Math.max(0, Math.min(rt.imgH - 1, iy | 0));
+  const i = (y * rt.imgW + x) * 4;
+  const r = rt.pixelData[i], g = rt.pixelData[i + 1], b = rt.pixelData[i + 2];
+  state.walls.push({ r, g, b });
+  enterMode("play");
+  renderWallList();
+  requestRender();
+  scheduleSave();
+}
+
+/* ─── 14. Wall list UI ───────────────────────────────────────────────── */
+function renderWallList() {
+  wallListEl.innerHTML = "";
+  state.walls.forEach((w, idx) => {
+    const el = document.createElement("span");
+    el.className = "swatch";
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    chip.style.background = `rgb(${w.r},${w.g},${w.b})`;
+    el.appendChild(chip);
+    const label = document.createElement("span");
+    label.textContent = `${w.r},${w.g},${w.b}`;
+    el.appendChild(label);
+    const rm = document.createElement("button");
+    rm.textContent = "×";
+    rm.title = "Remove";
+    rm.addEventListener("click", () => {
+      state.walls.splice(idx, 1);
+      renderWallList();
+      requestRender();
+      scheduleSave();
+    });
+    el.appendChild(rm);
+    wallListEl.appendChild(el);
+  });
+}
+
+/* ─── 15. Settings ↔ state binding ────────────────────────────────────── */
+function bindStateToInputs() {
+  $("speedInput").value = state.player.speed;
+  $("radiusInput").value = state.player.radius;
+  $("playerColor").value = state.player.color;
+  $("toleranceSlider").value = state.tolerance;
+  $("toleranceVal").textContent = state.tolerance;
+  $("zoomSlider").value = state.view.zoom;
+  $("rotateSlider").value = state.view.rotationDeg;
+  $("pathVisible").checked = state.pathStyle.visible;
+  $("pathColor").value = state.pathStyle.color;
+  $("pathWidth").value = state.pathStyle.width;
+  $("pathDash").value = state.pathStyle.dash;
+  renderWallList();
+  applyTheme();
+}
+
+function wireSettings() {
+  $("speedInput").addEventListener("input", e => { state.player.speed = +e.target.value; scheduleSave(); });
+  $("radiusInput").addEventListener("input", e => { state.player.radius = +e.target.value; requestRender(); scheduleSave(); });
+  $("playerColor").addEventListener("input", e => { state.player.color = e.target.value; requestRender(); scheduleSave(); });
+  $("toleranceSlider").addEventListener("input", e => {
+    state.tolerance = +e.target.value;
+    $("toleranceVal").textContent = state.tolerance;
+    scheduleSave();
+  });
+  $("zoomSlider").addEventListener("input", e => {
+    state.view.zoom = +e.target.value; requestRender(); scheduleSave();
+  });
+  $("rotateSlider").addEventListener("input", e => {
+    state.view.rotationDeg = +e.target.value; requestRender(); scheduleSave();
+  });
+  $("pathVisible").addEventListener("input", e => { state.pathStyle.visible = e.target.checked; requestRender(); scheduleSave(); });
+  $("pathColor").addEventListener("input", e => { state.pathStyle.color = e.target.value; requestRender(); scheduleSave(); });
+  $("pathWidth").addEventListener("input", e => { state.pathStyle.width = +e.target.value; requestRender(); scheduleSave(); });
+  $("pathDash").addEventListener("input", e => { state.pathStyle.dash = e.target.value; requestRender(); scheduleSave(); });
+
+  $("themeMode").addEventListener("input", e => { state.theme.mode = e.target.value; applyTheme(); requestRender(); scheduleSave(); });
+  $("bgColor").addEventListener("input", e => { state.theme.bg = e.target.value; applyTheme(); requestRender(); scheduleSave(); });
+  $("fgColor").addEventListener("input", e => { state.theme.fg = e.target.value; applyTheme(); requestRender(); scheduleSave(); });
+  $("bgReset").addEventListener("click", () => { state.theme.bg = null; applyTheme(); requestRender(); scheduleSave(); });
+  $("fgReset").addEventListener("click", () => { state.theme.fg = null; applyTheme(); requestRender(); scheduleSave(); });
+
+  $("btnZoomIn").addEventListener("click", () => zoomBy(1.25));
+  $("btnZoomOut").addEventListener("click", () => zoomBy(0.8));
+  $("btnRotL").addEventListener("click", () => { state.view.rotationDeg = ((state.view.rotationDeg - 90 + 540) % 360) - 180; $("rotateSlider").value = state.view.rotationDeg; requestRender(); scheduleSave(); });
+  $("btnRotR").addEventListener("click", () => { state.view.rotationDeg = ((state.view.rotationDeg + 90 + 540) % 360) - 180; $("rotateSlider").value = state.view.rotationDeg; requestRender(); scheduleSave(); });
+  $("btnResetView2").addEventListener("click", () => { fitView(); requestRender(); });
+  $("btnSetStart").addEventListener("click", () => enterMode("set-start"));
+  $("btnEyedrop2").addEventListener("click", () => enterMode("eyedrop"));
+  $("btnClearWalls").addEventListener("click", () => { state.walls = []; renderWallList(); requestRender(); scheduleSave(); });
+  $("btnClearPath").addEventListener("click", () => { state.path = []; requestRender(); scheduleSave(); });
+  $("btnReset").addEventListener("click", () => {
+    if (!confirm("Reset all settings, walls, path, and saved data?")) return;
+    localStorage.removeItem(STORAGE_KEY);
+    state = defaultState();
+    rt.imgEl = null; rt.pixelData = null; rt.imgW = 0; rt.imgH = 0; state.hasStart = false;
+    state.image = null;
+    emptyHint.style.display = "flex";
+    bindStateToInputs();
+    enterMode("play");
+    requestRender();
+  });
+  $("btnCloseSettings").addEventListener("click", () => $("settingsPanel").classList.remove("open"));
+}
+
+/* ─── 16. Top toolbar wiring ─────────────────────────────────────────── */
+function wireToolbar() {
+  $("btnUpload").addEventListener("click", () => $("fileInput").click());
+  $("fileInput").addEventListener("change", e => {
+    const f = e.target.files[0];
+    if (f) loadFile(f);
+    e.target.value = ""; // allow re-picking the same file later
+  });
+  $("btnExport").addEventListener("click", exportJson);
+  $("btnReposition").addEventListener("click", () => {
+    if (!rt.imgEl) return toast("Load an image first.");
+    enterMode(rt.mode === "reposition" ? "play" : "reposition");
+  });
+  $("btnEyedrop").addEventListener("click", () => {
+    if (!rt.imgEl) return toast("Load an image first.");
+    enterMode(rt.mode === "eyedrop" ? "play" : "eyedrop");
+  });
+  $("btnResetView").addEventListener("click", () => { fitView(); requestRender(); });
+  $("btnSettings").addEventListener("click", () => $("settingsPanel").classList.toggle("open"));
+}
+
+/* ─── 17. Export / Import ────────────────────────────────────────────── */
+function exportJson() {
+  if (!state.image) return toast("Nothing to export — load an image first.");
+  const blob = new Blob([JSON.stringify(state)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "maze-of-anything-export.json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast("Exported.");
+}
+function importStateJson(text) {
+  const parsed = JSON.parse(text);
+  if (!parsed || parsed.version !== STATE_VERSION) {
+    toast("Unsupported export version.");
+    return;
+  }
+  adoptState(parsed);
+}
+// Adopt a state object (from import or storage). Loads the image if any,
+// rebuilds derived runtime, refreshes the UI.
+function adoptState(s) {
+  state = Object.assign(defaultState(), s);
+  // Defensive: ensure nested objects exist (older / partial exports)
+  state.player = Object.assign(defaultState().player, state.player || {});
+  state.view = Object.assign(defaultState().view, state.view || {});
+  state.pathStyle = Object.assign(defaultState().pathStyle, state.pathStyle || {});
+  state.theme = Object.assign(defaultState().theme, state.theme || {});
+  state.walls = Array.isArray(state.walls) ? state.walls : [];
+  state.path = Array.isArray(state.path) ? state.path : [];
+  // hasStart older-export fallback: if missing but path/start look real, assume true.
+  if (typeof s.hasStart !== "boolean") {
+    state.hasStart = !!(s.image && (state.path.length > 0 || state.start.x || state.start.y));
+  }
+  bindStateToInputs();
+  if (state.image && state.image.dataUrl) {
+    // Pass skipFit so the imported view (zoom/pan/rotation) is preserved.
+    loadImageFromDataUrl(state.image.dataUrl, null, true);
+  } else {
+    rt.imgEl = null; rt.pixelData = null; state.hasStart = false;
+    emptyHint.style.display = "flex";
+    requestRender();
+  }
+  enterMode("play");
+}
+
+/* ─── 18. Input: keyboard ────────────────────────────────────────────── */
+const KEY_MAP = {
+  "ArrowUp": "up", "w": "up", "W": "up",
+  "ArrowDown": "down", "s": "down", "S": "down",
+  "ArrowLeft": "left", "a": "left", "A": "left",
+  "ArrowRight": "right", "d": "right", "D": "right",
+};
+window.addEventListener("keydown", e => {
+  // Don't hijack typing in inputs
+  const tag = (e.target && e.target.tagName) || "";
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  const dir = KEY_MAP[e.key];
+  if (dir) {
+    rt.keys.add(dir);
+    e.preventDefault();
+  }
+});
+window.addEventListener("keyup", e => {
+  const dir = KEY_MAP[e.key];
+  if (dir) rt.keys.delete(dir);
+});
+window.addEventListener("blur", () => rt.keys.clear());
+
+/* ─── 19. Input: D-pad pointer events ────────────────────────────────── */
+function wireDpad() {
+  document.querySelectorAll("#mobileDpad button[data-dir]").forEach(btn => {
+    const dir = btn.dataset.dir;
+    btn.addEventListener("pointerdown", e => {
+      btn.setPointerCapture(e.pointerId);
+      btn.classList.add("pressed");
+      rt.dpad.add(dir);
+      e.preventDefault();
+    });
+    const release = () => { btn.classList.remove("pressed"); rt.dpad.delete(dir); };
+    btn.addEventListener("pointerup", release);
+    btn.addEventListener("pointercancel", release);
+    btn.addEventListener("pointerleave", release);
+  });
+}
+
+/* ─── 20. Input: canvas pointer events (pan, pinch, click-tools) ─────── */
+const activePointers = new Map(); // pointerId → {x,y}
+function wireCanvasPointers() {
+  canvas.addEventListener("pointerdown", e => {
+    canvas.setPointerCapture(e.pointerId);
+    activePointers.set(e.pointerId, eventToCanvas(e));
+    if (activePointers.size === 1) {
+      // Single pointer: depending on mode, either start a pan or arm a click.
+      rt.panLast = eventToCanvas(e);
+      rt.panMoved = false;
+      rt.panning = (rt.mode === "play"); // tool modes don't pan; they wait for a click
+      if (rt.panning) canvas.classList.add("grabbing");
+    } else if (activePointers.size === 2) {
+      // Two-pointer: cancel any pan, start pinch. We mark panMoved so that
+      // releasing the pinch doesn't fire a spurious click.
+      rt.panning = false;
+      rt.panMoved = true;
+      canvas.classList.remove("grabbing");
+      const pts = [...activePointers.values()];
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+      rt.pinch = {
+        startDist: dist,
+        startZoom: state.view.zoom,
+        startPan: { x: state.view.panX, y: state.view.panY },
+        anchorImg: canvasToImage(mid.x, mid.y),
+      };
+    }
+  });
+  canvas.addEventListener("pointermove", e => {
+    if (!activePointers.has(e.pointerId)) return;
+    activePointers.set(e.pointerId, eventToCanvas(e));
+    if (activePointers.size === 2 && rt.pinch) {
+      const pts = [...activePointers.values()];
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+      const ratio = dist / rt.pinch.startDist;
+      const newZoom = clamp(rt.pinch.startZoom * ratio, 0.05, 20);
+      zoomToPoint(newZoom, mid);
+    } else if (rt.panning) {
+      const cur = eventToCanvas(e);
+      const dx = cur.x - rt.panLast.x;
+      const dy = cur.y - rt.panLast.y;
+      if (Math.hypot(dx, dy) > 2) rt.panMoved = true;
+      state.view.panX += dx;
+      state.view.panY += dy;
+      rt.panLast = cur;
+      requestRender();
+    }
+  });
+  function endPointer(e) {
+    const had = activePointers.has(e.pointerId);
+    activePointers.delete(e.pointerId);
+    if (activePointers.size < 2) rt.pinch = null;
+    if (activePointers.size === 0) {
+      const moved = rt.panMoved;
+      rt.panning = false;
+      rt.panMoved = false;
+      canvas.classList.remove("grabbing");
+      // Treat as a click if the pointer didn't move enough to count as a drag.
+      // handleCanvasClick is a no-op outside of tool modes, so this is safe in play mode too.
+      if (had && !moved) {
+        const pos = eventToCanvas(e);
+        const ip = canvasToImage(pos.x, pos.y);
+        handleCanvasClick(ip.x, ip.y);
+      }
+    }
+  }
+  canvas.addEventListener("pointerup", endPointer);
+  canvas.addEventListener("pointercancel", endPointer);
+
+  // Wheel zoom (desktop)
+  canvas.addEventListener("wheel", e => {
+    if (!rt.imgEl) return;
+    e.preventDefault();
+    const factor = Math.exp(-e.deltaY * 0.001);
+    const newZoom = clamp(state.view.zoom * factor, 0.05, 20);
+    zoomToPoint(newZoom, eventToCanvas(e));
+  }, { passive: false });
+}
+
+function handleCanvasClick(ix, iy) {
+  if (rt.mode === "set-start") setStartAt(ix, iy);
+  else if (rt.mode === "reposition") repositionAt(ix, iy);
+  else if (rt.mode === "eyedrop") eyedropAt(ix, iy);
+}
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function zoomBy(factor) {
+  if (!rt.imgEl) return;
+  const newZoom = clamp(state.view.zoom * factor, 0.05, 20);
+  zoomToPoint(newZoom, { x: rt.cssW / 2, y: rt.cssH / 2 });
+}
+function zoomToPoint(newZoom, canvasPt) {
+  // Keep the image point under canvasPt fixed across the zoom change.
+  const before = canvasToImage(canvasPt.x, canvasPt.y);
+  state.view.zoom = newZoom;
+  const after = imageToCanvas(before.x, before.y);
+  state.view.panX += canvasPt.x - after.x;
+  state.view.panY += canvasPt.y - after.y;
+  $("zoomSlider").value = state.view.zoom;
+  requestRender();
+  scheduleSave();
+}
+
+/* ─── 21. Input: undo slider ─────────────────────────────────────────── */
+function wireUndoSlider() {
+  const sl = $("undoSlider");
+  sl.addEventListener("input", e => { rt.undoValue = +e.target.value; });
+  const reset = () => { rt.undoValue = 0; sl.value = 0; };
+  // Reset on any release; document-level catches drags-off-the-slider too.
+  sl.addEventListener("pointerup", reset);
+  sl.addEventListener("pointercancel", reset);
+  sl.addEventListener("touchend", reset);
+  sl.addEventListener("blur", reset);
+  document.addEventListener("pointerup", () => { if (rt.undoValue > 0) reset(); });
+  document.addEventListener("pointercancel", () => { if (rt.undoValue > 0) reset(); });
+}
+
+/* ─── 22. Input: drag-and-drop + clipboard paste ─────────────────────── */
+function wireGlobalImport() {
+  ["dragenter", "dragover"].forEach(t => document.addEventListener(t, e => { e.preventDefault(); }));
+  document.addEventListener("drop", e => {
+    e.preventDefault();
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) loadFile(f);
+  });
+  document.addEventListener("paste", e => {
+    if (!e.clipboardData) return;
+    for (const item of e.clipboardData.items) {
+      if (item.type.startsWith("image/")) {
+        const f = item.getAsFile();
+        if (f) { loadFile(f); return; }
+      }
+    }
+    // Also accept pasted JSON text
+    const text = e.clipboardData.getData("text/plain");
+    if (text && text.trim().startsWith("{")) {
+      try { importStateJson(text); } catch (_) { /* ignore */ }
+    }
+  });
+}
+
+/* ─── 23. Resize handling ────────────────────────────────────────────── */
+window.addEventListener("resize", () => { fitCanvasSize(); requestRender(); });
+
+/* ─── 24. Init ───────────────────────────────────────────────────────── */
+function init() {
+  // 1. Resolve theme before anything paints
+  applyTheme();
+
+  // 2. Wire UI
+  wireToolbar();
+  wireSettings();
+  wireDpad();
+  wireCanvasPointers();
+  wireUndoSlider();
+  wireGlobalImport();
+
+  // 3. Try to restore the last session
+  if (loadFromStorage()) {
+    // adoptState already kicked off the image load if there was one
+  } else {
+    bindStateToInputs();
+  }
+
+  // 4. Start the render loop
+  fitCanvasSize();
+  requestRender();
+  requestAnimationFrame(frame);
+}
+
+init();
+
+// ── Debug / scripting hook ─────────────────────────────────────────────
+// Exposes internals so the app is hackable from the DevTools console.
+// Try, e.g.:  MazeOfAnything.state.player.speed = 200;
+window.MazeOfAnything = {
+  get state() { return state; },
+  set state(v) { state = v; },
+  rt,
+  isWall, playerCollides, movePlayer,
+  setStartAt, repositionAt, eyedropAt,
+  rewindByDistance,
+  canvasToImage, imageToCanvas,
+  loadImageFromDataUrl, fitView, exportJson, adoptState,
+};
+</script>
+</body>
+</html>
