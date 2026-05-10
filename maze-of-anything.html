@@ -41,31 +41,12 @@ html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family:
 body {
   background: var(--bg);
   color: var(--fg);
-  display: grid;
-  grid-template-rows: auto 1fr;
+  display: block;
   height: 100dvh;
   user-select: none;
   -webkit-user-select: none;
   touch-action: manipulation;
 }
-
-header {
-  display: flex;
-  align-items: center;
-  gap: var(--pad);
-  padding: var(--pad) calc(var(--pad) * 1.5);
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
-  flex-wrap: wrap;
-}
-header h1 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  flex: 0 0 auto;
-}
-header .toolbar { display: flex; gap: 4px; flex-wrap: wrap; flex: 1 1 auto; }
-header .spacer { flex: 1 1 auto; }
 
 button, .btn {
   background: var(--panel);
@@ -107,6 +88,8 @@ hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
 
 main {
   position: relative;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -158,6 +141,27 @@ main {
 }
 #toast.show { opacity: 1; }
 
+/* ── Floating menu button (only on-screen chrome besides joystick/undo) ── */
+#menuButton {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 35;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  font-size: 18px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+}
+
 /* ── Settings drawer ───────────────────────────────────────────────────── */
 #settingsPanel {
   position: absolute;
@@ -187,8 +191,8 @@ main {
   margin: 4px 0;
 }
 
-/* ── Wall color swatches ───────────────────────────────────────────────── */
-#wallList { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+/* ── Color swatches (walls + passable) ─────────────────────────────────── */
+#wallList, #passableList { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
 .swatch {
   display: inline-flex;
   align-items: center;
@@ -214,62 +218,77 @@ main {
   line-height: 1;
 }
 
-/* ── On-screen D-pad ───────────────────────────────────────────────────── */
-#mobileDpad {
+/* ── Maze library list rows ────────────────────────────────────────────── */
+#mazeList { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+.maze-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--input-bg);
+  font-size: 12px;
+}
+.maze-row.current { border-color: var(--accent); }
+.maze-row .maze-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.maze-row .maze-meta { color: var(--muted); font-size: 11px; flex: 0 0 auto; }
+.maze-row button { padding: 2px 6px; font-size: 12px; }
+
+/* ── On-screen analog joystick ─────────────────────────────────────────── */
+#joystick {
   position: absolute;
-  bottom: 16px;
-  right: 16px;
-  display: grid;
-  grid-template-columns: 44px 44px 44px;
-  grid-template-rows: 44px 44px 44px;
-  gap: 4px;
+  bottom: 24px;
+  right: 24px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: rgba(128, 128, 128, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.25);
   z-index: 30;
   touch-action: none;
-}
-#mobileDpad button {
-  background: rgba(128, 128, 128, 0.35);
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 8px;
-  font-size: 18px;
-  padding: 0;
-  cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  touch-action: none;
 }
-#mobileDpad button.pressed { background: var(--accent); }
-#mobileDpad .dp-up    { grid-column: 2; grid-row: 1; }
-#mobileDpad .dp-left  { grid-column: 1; grid-row: 2; }
-#mobileDpad .dp-down  { grid-column: 2; grid-row: 3; }
-#mobileDpad .dp-right { grid-column: 3; grid-row: 2; }
-#mobileDpad .dp-mid   { grid-column: 2; grid-row: 2; visibility: hidden; }
+#joystickKnob {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
 
-/* ── Undo slider, big and thumb-friendly ───────────────────────────────── */
+/* ── Undo slider: compact, snaps to 0 on release ───────────────────────── */
 #undoSliderWrap {
   position: absolute;
-  bottom: 16px;
-  left: 16px;
-  right: 180px;
+  bottom: 24px;
+  left: 24px;
+  width: min(240px, 60vw);
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 8px 12px;
+  padding: 6px 10px;
   z-index: 30;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 #undoSliderWrap label { font-size: 12px; color: var(--muted); }
 #undoSlider {
   width: 100%;
-  height: 32px;
+  height: 28px;
   margin: 0;
 }
 
 /* ── Status overlay (e.g. "Click to set start") ────────────────────────── */
 #modeBanner {
   position: absolute;
-  top: 8px;
+  top: 12px;
   left: 50%;
   transform: translateX(-50%);
   background: var(--accent);
@@ -279,15 +298,9 @@ main {
   font-size: 13px;
   z-index: 35;
   display: none;
+  max-width: calc(100% - 96px);
 }
 #modeBanner.show { display: block; }
-
-/* ── Narrow viewport tweaks ───────────────────────────────────────────── */
-@media (max-width: 600px) {
-  header h1 { font-size: 14px; }
-  header button { padding: 4px 6px; font-size: 12px; }
-  #undoSliderWrap { right: 16px; bottom: 168px; } /* sit above the dpad */
-}
 
 /* Hide native file input visually */
 .hidden-file { display: none; }
@@ -295,48 +308,33 @@ main {
 </head>
 <body>
   <!-- ────────────────────────────────────────────────────────────────────
-       Top toolbar with primary actions. Settings live in the right drawer
-       which slides in/out via the gear button.
+       The play surface shows only the joystick, undo slider, and a small
+       floating ☰ button. Everything else lives in the settings drawer.
        ──────────────────────────────────────────────────────────────────── -->
-  <header>
-    <h1>Maze of Anything</h1>
-    <div class="toolbar">
-      <button id="btnUpload" title="Upload image or .json export">Upload</button>
-      <button id="btnExport" title="Download current state as .json">Export</button>
-      <button id="btnReposition" title="Click on the maze to teleport the player">Reposition</button>
-      <button id="btnEyedrop" title="Click on the maze to add a wall color">Eyedrop wall</button>
-      <button id="btnResetView" title="Recenter and zoom to fit">Fit view</button>
-      <button id="btnSettings" title="Open settings panel">⚙ Settings</button>
-    </div>
-    <input type="file" id="fileInput" class="hidden-file" accept="image/*,.json,application/json">
-  </header>
-
   <main>
     <canvas id="mazeCanvas"></canvas>
 
     <div id="emptyHint">
       <h2>Maze of Anything</h2>
-      <p>Upload, drag-drop, or paste (Ctrl/⌘+V) a maze image to begin.</p>
+      <p>Tap the ☰ menu, then Upload — or drag-drop / paste (Ctrl/⌘+V) a maze image to begin.</p>
       <p>You can also import a previously exported <code>.json</code> file.</p>
     </div>
 
     <div id="modeBanner"></div>
     <div id="toast"></div>
 
-    <!-- D-pad: pointer events let the same handler serve mouse and touch.
-         Two adjacent buttons can be pressed simultaneously on multi-touch
-         to walk diagonally. -->
-    <div id="mobileDpad" aria-label="Movement controls">
-      <button class="dp-up"    data-dir="up"    aria-label="Up">▲</button>
-      <button class="dp-left"  data-dir="left"  aria-label="Left">◀</button>
-      <button class="dp-mid"   aria-hidden="true"></button>
-      <button class="dp-right" data-dir="right" aria-label="Right">▶</button>
-      <button class="dp-down"  data-dir="down"  aria-label="Down">▼</button>
+    <button id="menuButton" aria-label="Open menu" title="Open menu">☰</button>
+
+    <input type="file" id="fileInput" class="hidden-file" accept="image/*,.json,application/json">
+
+    <!-- Analog joystick: a single pointer drags the knob; release recenters. -->
+    <div id="joystick" aria-label="Movement joystick">
+      <div id="joystickKnob"></div>
     </div>
 
     <!-- Undo slider: snaps to 0 on release, retraces while held > 0. -->
     <div id="undoSliderWrap">
-      <label for="undoSlider">Undo (hold and release to stop)</label>
+      <label for="undoSlider">Undo</label>
       <input type="range" id="undoSlider" min="0" max="100" value="0" step="1">
     </div>
 
@@ -344,6 +342,26 @@ main {
          Settings drawer. Every input has an id used by JS to bind state.
          ──────────────────────────────────────────────────────────────── -->
     <aside id="settingsPanel">
+      <h3>Actions</h3>
+      <div class="row">
+        <button id="btnUpload" title="Upload image or .json export">Upload</button>
+        <button id="btnExport" title="Download current state as .json">Export</button>
+        <button id="btnResetView" title="Recenter and zoom to fit">Fit view</button>
+      </div>
+      <div class="row">
+        <button id="btnReposition" title="Click on the maze to teleport the player">Reposition</button>
+        <button id="btnEyedrop" title="Click on the maze to add a wall color">Eyedrop wall</button>
+      </div>
+
+      <hr>
+      <h3>Mazes</h3>
+      <p class="help">Saved mazes in this browser. Click a name to rename.</p>
+      <div id="mazeList"></div>
+      <div class="row">
+        <button id="btnNewMaze">New blank maze</button>
+      </div>
+
+      <hr>
       <h3>View</h3>
       <div class="row">
         <label>Zoom</label>
@@ -379,7 +397,7 @@ main {
 
       <hr>
       <h3>Walls</h3>
-      <p class="help">Pixels matching any wall color (within tolerance) are impassable. Click "Eyedrop wall" then click a pixel on the maze to add a color.</p>
+      <p class="help">Pixels matching any wall color (within tolerance) are impassable. Passable colors below override walls. Click "Eyedrop wall" then click a pixel on the maze to add a color.</p>
       <div class="row">
         <label>Tolerance</label>
         <input type="range" id="toleranceSlider" min="0" max="200" step="1" value="64" style="flex:1">
@@ -392,9 +410,18 @@ main {
       </div>
 
       <hr>
-      <h3>Path</h3>
+      <h3>Passable</h3>
+      <p class="help">Pixels matching any passable color (within the same tolerance) are walkable, even if they also match a wall color.</p>
+      <div id="passableList"></div>
       <div class="row">
-        <label>Visible</label>
+        <button id="btnEyedropPassable">Eyedrop passable</button>
+        <button id="btnClearPassable" class="danger">Clear all</button>
+      </div>
+
+      <hr>
+      <h3>Trail</h3>
+      <div class="row">
+        <label>Show Trail</label>
         <input type="checkbox" id="pathVisible" checked>
       </div>
       <div class="row">
@@ -414,7 +441,7 @@ main {
         </select>
       </div>
       <div class="row">
-        <button id="btnClearPath" class="danger">Erase recorded path</button>
+        <button id="btnClearPath" class="danger">Erase recorded trail</button>
       </div>
 
       <hr>
@@ -459,40 +486,49 @@ main {
    MAZE OF ANYTHING
    A single-file, offline, browser-based maze toy. Load any image, configure
    what counts as a wall, then walk a colored dot through the open spaces
-   with WASD/arrows or an on-screen D-pad. Hold the undo slider to retrace
-   your path. State exports to a single JSON file that can be re-imported.
+   with WASD/arrows or an on-screen joystick. Hold the undo slider to retrace
+   your trail. State exports to a single JSON file that can be re-imported.
    ════════════════════════════════════════════════════════════════════════ */
 
 /* ─── 1. Constants ───────────────────────────────────────────────────────
    Tunable knobs. MAX_REWIND_PX_PER_SEC controls how fast a fully-pulled
-   undo slider rewinds. STORAGE_KEY is the localStorage slot. STATE_VERSION
-   guards against importing an incompatible older export. */
+   undo slider rewinds. LIBRARY_KEY is the localStorage slot for the whole
+   maze library; LEGACY_STORAGE_KEY is the pre-library single-maze slot,
+   read once on first load for migration. STATE_VERSION guards against
+   importing an incompatible older export. */
 const STATE_VERSION = 1;
-const STORAGE_KEY = "maze-of-anything:v1";
+const LIBRARY_VERSION = 1;
+const LIBRARY_KEY = "maze-of-anything:library:v1";
+const LEGACY_STORAGE_KEY = "maze-of-anything:v1";
 const MAX_REWIND_PX_PER_SEC = 600;
 const SAVE_DEBOUNCE_MS = 500;
 const TOAST_MS = 2200;
 
 /* ─── 2. State ───────────────────────────────────────────────────────────
-   Single source of truth. Everything serializable lives here; everything
-   in this object is exported, persisted, and restored verbatim on import.
+   Single source of truth for the *current* maze. Everything serializable
+   lives here. The library wraps one of these snapshots per saved maze.
    Anything beginning with `_` is runtime-only and not serialized. */
 function defaultState() {
   return {
     version: STATE_VERSION,
     image: null, // { dataUrl, naturalWidth, naturalHeight }
     walls: [{ r: 0, g: 0, b: 0 }], // pre-seeded with "black", widened by tolerance
+    passable: [], // colors that override wall matches
     tolerance: 64,
     player: { x: 0, y: 0, radius: 6, color: "#ff7a59", speed: 80 },
     start: { x: 0, y: 0 },
     hasStart: false, // becomes true after the user picks a start position
-    path: [], // [{ kind: 'move'|'jump', points: [{x,y}, ...] }]
+    path: [], // [{ kind: 'move'|'jump', points: [{x,y}, ...] }]  -- the trail
     view: { zoom: 1, panX: 0, panY: 0, rotationDeg: 0 },
     pathStyle: { visible: true, color: "#ff7a59", width: 2, dash: "solid" },
     theme: { mode: "auto", bg: null, fg: null },
   };
 }
 let state = defaultState();
+
+// In-memory copy of the maze library. Persisted as JSON in localStorage.
+// Shape: { version, currentId, mazes: { [id]: { id, name, savedAt, state } } }
+let library = { version: LIBRARY_VERSION, currentId: null, mazes: {} };
 
 // Runtime-only state. The image element + cached pixel data are heavy and
 // derived from state.image, so they're kept here instead of in `state`.
@@ -501,9 +537,9 @@ const rt = {
   pixelData: null,     // Uint8ClampedArray of RGBA bytes, length = w*h*4
   imgW: 0,
   imgH: 0,
-  mode: "play",        // "play" | "set-start" | "reposition" | "eyedrop"
+  mode: "play",        // "play" | "set-start" | "reposition" | "eyedrop" | "eyedrop-passable"
   keys: new Set(),     // currently-held movement keys (normalized to 'up'|'down'|'left'|'right')
-  dpad: new Set(),     // pointer-down d-pad directions
+  joystick: { x: 0, y: 0 }, // canvas-space vector from joystick, magnitude in [0,1]
   undoValue: 0,        // 0..100, latest undo slider value
   panning: false,
   panLast: null,       // {x,y} last pointer position during pan
@@ -523,6 +559,8 @@ const emptyHint = $("emptyHint");
 const toastEl = $("toast");
 const modeBanner = $("modeBanner");
 const wallListEl = $("wallList");
+const passableListEl = $("passableList");
+const mazeListEl = $("mazeList");
 
 /* ─── 4. Toast helper ──────────────────────────────────────────────────── */
 let toastTimer = null;
@@ -555,38 +593,174 @@ function applyTheme() {
 mql.addEventListener("change", () => { if (state.theme.mode === "auto") applyTheme(); });
 
 /* ─── 6. Persistence ──────────────────────────────────────────────────────
-   Debounced save. localStorage typically caps around 5MB; if the serialized
-   blob (which includes the image dataUrl) exceeds that, fall back to saving
-   without the image so at least settings/path persist. */
+   The library stores every saved maze keyed by id; `currentId` points at
+   the one currently loaded into `state`. saveNow() snapshots the live
+   state back into the library and writes it. localStorage caps around 5MB,
+   so on quota errors we progressively shrink the payload. */
+function newMazeId() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+}
+
+function emptyLibrary() {
+  return { version: LIBRARY_VERSION, currentId: null, mazes: {} };
+}
+
+function mazeAutoName(s, fallback) {
+  if (fallback) return fallback;
+  if (s && s.image && s.image.naturalWidth) {
+    return "Maze " + s.image.naturalWidth + "×" + s.image.naturalHeight;
+  }
+  return "New maze";
+}
+
 function scheduleSave() {
   clearTimeout(rt.saveTimer);
   rt.saveTimer = setTimeout(saveNow, SAVE_DEBOUNCE_MS);
 }
-function saveNow() {
+
+function snapshotCurrent() {
+  if (!library.currentId) return;
+  const entry = library.mazes[library.currentId];
+  if (!entry) return;
+  entry.state = state;
+  entry.savedAt = Date.now();
+}
+
+function writeLibrary() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch (e) {
-    // Probably QuotaExceededError. Try again without the bulky image.
-    try {
-      const lite = { ...state, image: null };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(lite));
-      toast("Image too large to autosave; settings saved.");
-    } catch (e2) {
-      toast("Could not save state to browser storage.");
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify(library));
+    return true;
+  } catch (_) { return false; }
+}
+
+function saveNow() {
+  snapshotCurrent();
+  if (writeLibrary()) return;
+  // First retry: strip images from non-current mazes.
+  const stripped = {
+    version: library.version,
+    currentId: library.currentId,
+    mazes: {},
+  };
+  for (const id of Object.keys(library.mazes)) {
+    const m = library.mazes[id];
+    if (id === library.currentId) {
+      stripped.mazes[id] = m;
+    } else {
+      stripped.mazes[id] = {
+        id: m.id, name: m.name, savedAt: m.savedAt,
+        state: Object.assign({}, m.state, { image: null }),
+      };
     }
   }
-}
-function loadFromStorage() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return false;
-    const parsed = JSON.parse(raw);
-    if (!parsed || parsed.version !== STATE_VERSION) return false;
-    adoptState(parsed);
-    return true;
-  } catch (e) {
-    return false;
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify(stripped));
+    library = stripped;
+    toast("Storage full; older mazes' images were dropped.");
+    return;
+  } catch (_) { /* fall through */ }
+  // Final retry: drop the current image too.
+  try {
+    const lite = JSON.parse(JSON.stringify(stripped));
+    if (lite.currentId && lite.mazes[lite.currentId]) {
+      lite.mazes[lite.currentId].state.image = null;
+    }
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify(lite));
+    library = lite;
+    toast("Image too large to autosave; settings saved.");
+  } catch (_) {
+    toast("Could not save state to browser storage.");
   }
+}
+
+function loadLibrary() {
+  // Read the new-format library if it exists.
+  try {
+    const raw = localStorage.getItem(LIBRARY_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.version === LIBRARY_VERSION && parsed.mazes) {
+        library = parsed;
+        // Heal a missing/dangling currentId
+        const ids = Object.keys(library.mazes);
+        if (!library.currentId || !library.mazes[library.currentId]) {
+          library.currentId = ids[0] || null;
+        }
+        return library.currentId != null;
+      }
+    }
+  } catch (_) { /* fall through to legacy */ }
+  // Migrate the legacy single-state slot if present.
+  try {
+    const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.version === STATE_VERSION) {
+        const id = newMazeId();
+        library = {
+          version: LIBRARY_VERSION,
+          currentId: id,
+          mazes: {
+            [id]: {
+              id, name: mazeAutoName(parsed, "Migrated maze"),
+              savedAt: Date.now(), state: parsed,
+            },
+          },
+        };
+        writeLibrary();
+        try { localStorage.removeItem(LEGACY_STORAGE_KEY); } catch (_) { /* ignore */ }
+        return true;
+      }
+    }
+  } catch (_) { /* ignore */ }
+  return false;
+}
+
+function createNewMaze(name, initialState) {
+  const id = newMazeId();
+  const s = initialState || defaultState();
+  library.mazes[id] = {
+    id,
+    name: name || mazeAutoName(s, null),
+    savedAt: Date.now(),
+    state: s,
+  };
+  library.currentId = id;
+  return id;
+}
+
+function switchToMaze(id) {
+  if (!library.mazes[id] || id === library.currentId) return;
+  // Snapshot the maze we're leaving so unsaved tweaks aren't lost.
+  snapshotCurrent();
+  library.currentId = id;
+  adoptState(library.mazes[id].state);
+  saveNow();
+  renderMazeList();
+}
+
+function deleteMaze(id) {
+  if (!library.mazes[id]) return;
+  const ids = Object.keys(library.mazes);
+  if (ids.length <= 1) { toast("At least one maze must remain."); return; }
+  const wasCurrent = (id === library.currentId);
+  delete library.mazes[id];
+  if (wasCurrent) {
+    library.currentId = Object.keys(library.mazes)[0];
+    adoptState(library.mazes[library.currentId].state);
+  }
+  saveNow();
+  renderMazeList();
+}
+
+function renameMaze(id, name) {
+  if (!library.mazes[id]) return;
+  const trimmed = (name || "").trim();
+  if (!trimmed) return;
+  library.mazes[id].name = trimmed;
+  saveNow();
+  renderMazeList();
 }
 
 /* ─── 7. Coordinate transforms ───────────────────────────────────────────
@@ -665,7 +839,7 @@ function loadFile(file) {
   if (isJson) {
     const fr = new FileReader();
     fr.onload = () => {
-      try { importStateJson(fr.result); }
+      try { importStateJson(fr.result, file.name); }
       catch (e) { toast("Invalid JSON: " + e.message); }
     };
     fr.readAsText(file);
@@ -677,30 +851,37 @@ function loadFile(file) {
   }
   const fr = new FileReader();
   fr.onload = () => {
-    // Fresh image: reset only image-specific state. Preserve user prefs
-    // (theme, path style, player color/radius/speed) across uploads so the
-    // user doesn't have to reconfigure them every time.
-    const def = defaultState();
-    state.image = null;
-    state.walls = def.walls;
-    state.tolerance = def.tolerance;
-    state.path = [];
-    state.start = { x: 0, y: 0 };
-    state.player.x = 0;
-    state.player.y = 0;
-    state.view = def.view;
-    state.hasStart = false;
+    // Fresh image → fresh maze entry. Preserve user prefs (theme, trail
+    // style, player color/radius/speed) from the current state so they
+    // carry across uploads.
+    const carry = {
+      player: Object.assign({}, state.player, { x: 0, y: 0 }),
+      pathStyle: Object.assign({}, state.pathStyle),
+      theme: Object.assign({}, state.theme),
+    };
+    const fresh = defaultState();
+    fresh.player = carry.player;
+    fresh.pathStyle = carry.pathStyle;
+    fresh.theme = carry.theme;
+    // Reset the current snapshot of the previous maze before switching.
+    snapshotCurrent();
+    const name = file.name ? file.name.replace(/\.[^.]+$/, "") : null;
+    createNewMaze(name, fresh);
+    state = fresh;
     bindStateToInputs();
+    renderMazeList();
     loadImageFromDataUrl(fr.result, () => enterMode("set-start"));
   };
   fr.readAsDataURL(file);
 }
 
 /* ─── 9. Wall detection ──────────────────────────────────────────────────
-   isWall(ix, iy) checks one pixel against every wall color. Out-of-bounds
-   pixels are treated as wall so the player can't walk off the image.
-   Tolerance is compared against squared Euclidean RGB distance (cheaper
-   than sqrt; we square the threshold once below). */
+   isWall(ix, iy) checks one pixel against every wall color, with passable
+   colors short-circuiting to "not a wall" even when they would otherwise
+   match a wall entry. Out-of-bounds pixels are treated as wall so the
+   player can't walk off the image. Tolerance is compared against squared
+   Euclidean RGB distance (cheaper than sqrt; we square the threshold once
+   below). */
 function isWall(ix, iy) {
   if (!rt.pixelData) return false; // no pixel data → nothing blocks
   const x = ix | 0, y = iy | 0;
@@ -708,6 +889,12 @@ function isWall(ix, iy) {
   const i = (y * rt.imgW + x) * 4;
   const r = rt.pixelData[i], g = rt.pixelData[i + 1], b = rt.pixelData[i + 2];
   const tol2 = state.tolerance * state.tolerance;
+  // Passable colors override walls: a pixel that matches a passable entry
+  // is never a wall, even if it also matches a wall entry.
+  for (const p of state.passable) {
+    const dr = r - p.r, dg = g - p.g, db = b - p.b;
+    if (dr * dr + dg * dg + db * db <= tol2) return false;
+  }
   for (const w of state.walls) {
     const dr = r - w.r, dg = g - w.g, db = b - w.b;
     if (dr * dr + dg * dg + db * db <= tol2) return true;
@@ -798,7 +985,7 @@ function render() {
   ctx.imageSmoothingEnabled = state.view.zoom < 1.5;
   ctx.drawImage(rt.imgEl, 0, 0);
 
-  // Path. Line widths and dash patterns are specified in image-space units,
+  // Trail. Line widths and dash patterns are specified in image-space units,
   // then scaled by 1/zoom so they appear constant on screen.
   if (state.pathStyle.visible && state.path.length > 0) {
     const wScreen = state.pathStyle.width;
@@ -846,8 +1033,8 @@ function render() {
   ctx.restore();
 }
 
-/* ─── 11. Movement + path recording ──────────────────────────────────────
-   The same loop drives both forward movement (from keys / d-pad) and the
+/* ─── 11. Movement + trail recording ─────────────────────────────────────
+   The same loop drives both forward movement (from keys / joystick) and the
    undo-rewind. Forward movement creates / extends a "move" segment; the
    rewind walks backward through whatever segments exist. */
 let lastTs = 0;
@@ -862,8 +1049,9 @@ function frame(ts) {
       requestRender();
     } else {
       const dir = currentDirection();
-      if (dir.x !== 0 || dir.y !== 0) {
-        movePlayer(dir.x * state.player.speed * dt, dir.y * state.player.speed * dt);
+      if (dir.mag > 0) {
+        const step = state.player.speed * dt * dir.mag;
+        movePlayer(dir.x * step, dir.y * step);
         requestRender();
       }
     }
@@ -876,16 +1064,28 @@ function frame(ts) {
   requestAnimationFrame(frame);
 }
 
+// Combine keyboard arrows + joystick into a movement direction. Input is
+// treated as canvas-space (matches what the user sees on screen). When the
+// maze is rotated, we inverse-rotate so that "up" on the joystick moves the
+// player toward the top of the screen rather than toward image-up.
 function currentDirection() {
   let dx = 0, dy = 0;
-  const all = new Set([...rt.keys, ...rt.dpad]);
-  if (all.has("up")) dy -= 1;
-  if (all.has("down")) dy += 1;
-  if (all.has("left")) dx -= 1;
-  if (all.has("right")) dx += 1;
-  if (dx === 0 && dy === 0) return { x: 0, y: 0 };
+  if (rt.keys.has("up"))    dy -= 1;
+  if (rt.keys.has("down"))  dy += 1;
+  if (rt.keys.has("left"))  dx -= 1;
+  if (rt.keys.has("right")) dx += 1;
+  dx += rt.joystick.x;
+  dy += rt.joystick.y;
+  if (dx === 0 && dy === 0) return { x: 0, y: 0, mag: 0 };
   const len = Math.hypot(dx, dy);
-  return { x: dx / len, y: dy / len };
+  const mag = Math.min(1, len);
+  // Inverse-rotate the canvas-space input vector into image-space so it
+  // composes correctly with the un-rotated player coordinates.
+  const rad = -state.view.rotationDeg * Math.PI / 180;
+  const cs = Math.cos(rad), sn = Math.sin(rad);
+  const ix = (dx * cs - dy * sn) / len;
+  const iy = (dx * sn + dy * cs) / len;
+  return { x: ix, y: iy, mag };
 }
 
 function movePlayer(dx, dy) {
@@ -910,7 +1110,7 @@ function currentSegment() {
   return state.path.length ? state.path[state.path.length - 1] : null;
 }
 // Append a move from (fromX,fromY) to (toX,toY). When a new segment is
-// created (after a teleport, fresh start, or empty path) the FROM point is
+// created (after a teleport, fresh start, or empty trail) the FROM point is
 // the segment's anchor — recording the TO point alone would lose the very
 // first pixel of motion and a full rewind would land one pixel off-start.
 function recordMove(fromX, fromY, toX, toY) {
@@ -926,10 +1126,10 @@ function recordMove(fromX, fromY, toX, toY) {
   }
 }
 
-/* ─── 12. Undo: walk backward along the recorded path ───────────────────
+/* ─── 12. Undo: walk backward along the recorded trail ──────────────────
    Distance budget `d` (in image pixels) is consumed segment by segment,
    leg by leg. As we pass each waypoint we pop it; when a partial leg is
-   consumed the tail point is moved in place so the rendered path shrinks
+   consumed the tail point is moved in place so the rendered trail shrinks
    smoothly. Jump segments are interpolated like any other 2-point leg. */
 function rewindByDistance(d) {
   while (d > 0 && state.path.length > 0) {
@@ -968,7 +1168,7 @@ function rewindByDistance(d) {
   scheduleSave();
 }
 
-/* ─── 13. Mode switching (set-start / reposition / eyedrop) ──────────── */
+/* ─── 13. Mode switching (set-start / reposition / eyedrop / passable) ── */
 function enterMode(mode, message) {
   rt.mode = mode;
   if (mode === "play") {
@@ -979,6 +1179,7 @@ function enterMode(mode, message) {
       "set-start": "Click on the maze to set the start position.",
       "reposition": "Click on the maze to teleport the player.",
       "eyedrop": "Click on a wall pixel to add it as a wall color.",
+      "eyedrop-passable": "Click on a pixel to add it as a passable color.",
     })[mode];
     modeBanner.classList.add("show");
     canvas.classList.add("crosshair");
@@ -988,13 +1189,14 @@ function enterMode(mode, message) {
   $("btnEyedrop").classList.toggle("active", mode === "eyedrop");
   $("btnSetStart").classList.toggle("active", mode === "set-start");
   $("btnEyedrop2").classList.toggle("active", mode === "eyedrop");
+  $("btnEyedropPassable").classList.toggle("active", mode === "eyedrop-passable");
 }
 
 function setStartAt(ix, iy) {
   state.start = { x: ix, y: iy };
   state.player.x = ix;
   state.player.y = iy;
-  state.path = []; // fresh maze gets a fresh path
+  state.path = []; // fresh maze gets a fresh trail
   state.hasStart = true;
   enterMode("play");
   requestRender();
@@ -1003,7 +1205,7 @@ function setStartAt(ix, iy) {
 
 function repositionAt(ix, iy) {
   // Record a "jump" segment from the current player to the new spot. If the
-  // current path's tail is at the same point we don't add a duplicate.
+  // current trail's tail is at the same point we don't add a duplicate.
   const from = { x: state.player.x, y: state.player.y };
   const to = { x: ix, y: iy };
   state.path.push({ kind: "jump", points: [from, to] });
@@ -1014,44 +1216,136 @@ function repositionAt(ix, iy) {
   scheduleSave();
 }
 
+// Same exact-RGB check used to reject duplicate eyedrops in both wall and
+// passable lists. Exact match is intentional: tolerance already widens the
+// match radius at collision-check time.
+function colorExists(list, c) {
+  return list.some(x => x.r === c.r && x.g === c.g && x.b === c.b);
+}
+
 function eyedropAt(ix, iy) {
   if (!rt.pixelData) { toast("No pixel data available."); return; }
   const x = Math.max(0, Math.min(rt.imgW - 1, ix | 0));
   const y = Math.max(0, Math.min(rt.imgH - 1, iy | 0));
   const i = (y * rt.imgW + x) * 4;
-  const r = rt.pixelData[i], g = rt.pixelData[i + 1], b = rt.pixelData[i + 2];
-  state.walls.push({ r, g, b });
+  const c = { r: rt.pixelData[i], g: rt.pixelData[i + 1], b: rt.pixelData[i + 2] };
+  if (colorExists(state.walls, c)) {
+    toast("Color already in wall list.");
+    enterMode("play");
+    return;
+  }
+  state.walls.push(c);
   enterMode("play");
   renderWallList();
   requestRender();
   scheduleSave();
 }
 
-/* ─── 14. Wall list UI ───────────────────────────────────────────────── */
-function renderWallList() {
-  wallListEl.innerHTML = "";
-  state.walls.forEach((w, idx) => {
-    const el = document.createElement("span");
-    el.className = "swatch";
+function eyedropPassableAt(ix, iy) {
+  if (!rt.pixelData) { toast("No pixel data available."); return; }
+  const x = Math.max(0, Math.min(rt.imgW - 1, ix | 0));
+  const y = Math.max(0, Math.min(rt.imgH - 1, iy | 0));
+  const i = (y * rt.imgW + x) * 4;
+  const c = { r: rt.pixelData[i], g: rt.pixelData[i + 1], b: rt.pixelData[i + 2] };
+  if (colorExists(state.passable, c)) {
+    toast("Color already in passable list.");
+    enterMode("play");
+    return;
+  }
+  state.passable.push(c);
+  enterMode("play");
+  renderPassableList();
+  requestRender();
+  scheduleSave();
+}
+
+/* ─── 14. Swatch + library list UIs ──────────────────────────────────── */
+function renderSwatchList(el, items, onRemove) {
+  el.innerHTML = "";
+  items.forEach((c, idx) => {
+    const row = document.createElement("span");
+    row.className = "swatch";
     const chip = document.createElement("span");
     chip.className = "chip";
-    chip.style.background = `rgb(${w.r},${w.g},${w.b})`;
-    el.appendChild(chip);
+    chip.style.background = `rgb(${c.r},${c.g},${c.b})`;
+    row.appendChild(chip);
     const label = document.createElement("span");
-    label.textContent = `${w.r},${w.g},${w.b}`;
-    el.appendChild(label);
+    label.textContent = `${c.r},${c.g},${c.b}`;
+    row.appendChild(label);
     const rm = document.createElement("button");
     rm.textContent = "×";
     rm.title = "Remove";
-    rm.addEventListener("click", () => {
-      state.walls.splice(idx, 1);
-      renderWallList();
-      requestRender();
-      scheduleSave();
-    });
-    el.appendChild(rm);
-    wallListEl.appendChild(el);
+    rm.addEventListener("click", () => onRemove(idx));
+    row.appendChild(rm);
+    el.appendChild(row);
   });
+}
+
+function renderWallList() {
+  renderSwatchList(wallListEl, state.walls, idx => {
+    state.walls.splice(idx, 1);
+    renderWallList();
+    requestRender();
+    scheduleSave();
+  });
+}
+
+function renderPassableList() {
+  renderSwatchList(passableListEl, state.passable, idx => {
+    state.passable.splice(idx, 1);
+    renderPassableList();
+    requestRender();
+    scheduleSave();
+  });
+}
+
+function relativeTime(ts) {
+  if (!ts) return "";
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return "just now";
+  if (diff < 3_600_000) return Math.floor(diff / 60_000) + "m ago";
+  if (diff < 86_400_000) return Math.floor(diff / 3_600_000) + "h ago";
+  return Math.floor(diff / 86_400_000) + "d ago";
+}
+
+function renderMazeList() {
+  mazeListEl.innerHTML = "";
+  const ids = Object.keys(library.mazes).sort((a, b) =>
+    (library.mazes[b].savedAt || 0) - (library.mazes[a].savedAt || 0)
+  );
+  for (const id of ids) {
+    const m = library.mazes[id];
+    const row = document.createElement("div");
+    row.className = "maze-row" + (id === library.currentId ? " current" : "");
+    const name = document.createElement("span");
+    name.className = "maze-name";
+    name.textContent = m.name;
+    name.title = "Click to rename";
+    name.addEventListener("click", () => {
+      const next = prompt("Rename maze:", m.name);
+      if (next != null) renameMaze(id, next);
+    });
+    row.appendChild(name);
+    const meta = document.createElement("span");
+    meta.className = "maze-meta";
+    meta.textContent = relativeTime(m.savedAt);
+    row.appendChild(meta);
+    if (id !== library.currentId) {
+      const load = document.createElement("button");
+      load.textContent = "Load";
+      load.addEventListener("click", () => switchToMaze(id));
+      row.appendChild(load);
+    }
+    const del = document.createElement("button");
+    del.textContent = "×";
+    del.title = "Delete maze";
+    del.className = "danger";
+    del.addEventListener("click", () => {
+      if (confirm(`Delete maze "${m.name}"?`)) deleteMaze(id);
+    });
+    row.appendChild(del);
+    mazeListEl.appendChild(row);
+  }
 }
 
 /* ─── 15. Settings ↔ state binding ────────────────────────────────────── */
@@ -1068,6 +1362,8 @@ function bindStateToInputs() {
   $("pathWidth").value = state.pathStyle.width;
   $("pathDash").value = state.pathStyle.dash;
   renderWallList();
+  renderPassableList();
+  renderMazeList();
   applyTheme();
 }
 
@@ -1105,22 +1401,38 @@ function wireSettings() {
   $("btnSetStart").addEventListener("click", () => enterMode("set-start"));
   $("btnEyedrop2").addEventListener("click", () => enterMode("eyedrop"));
   $("btnClearWalls").addEventListener("click", () => { state.walls = []; renderWallList(); requestRender(); scheduleSave(); });
+  $("btnEyedropPassable").addEventListener("click", () => enterMode("eyedrop-passable"));
+  $("btnClearPassable").addEventListener("click", () => { state.passable = []; renderPassableList(); requestRender(); scheduleSave(); });
   $("btnClearPath").addEventListener("click", () => { state.path = []; requestRender(); scheduleSave(); });
-  $("btnReset").addEventListener("click", () => {
-    if (!confirm("Reset all settings, walls, path, and saved data?")) return;
-    localStorage.removeItem(STORAGE_KEY);
-    state = defaultState();
-    rt.imgEl = null; rt.pixelData = null; rt.imgW = 0; rt.imgH = 0; state.hasStart = false;
-    state.image = null;
+  $("btnNewMaze").addEventListener("click", () => {
+    snapshotCurrent();
+    createNewMaze(null, defaultState());
+    state = library.mazes[library.currentId].state;
+    rt.imgEl = null; rt.pixelData = null; rt.imgW = 0; rt.imgH = 0;
     emptyHint.style.display = "flex";
     bindStateToInputs();
     enterMode("play");
     requestRender();
+    saveNow();
+  });
+  $("btnReset").addEventListener("click", () => {
+    if (!confirm("Reset all settings, walls, trail, and saved data?")) return;
+    localStorage.removeItem(LIBRARY_KEY);
+    try { localStorage.removeItem(LEGACY_STORAGE_KEY); } catch (_) { /* ignore */ }
+    library = emptyLibrary();
+    createNewMaze("New maze", defaultState());
+    state = library.mazes[library.currentId].state;
+    rt.imgEl = null; rt.pixelData = null; rt.imgW = 0; rt.imgH = 0;
+    emptyHint.style.display = "flex";
+    bindStateToInputs();
+    enterMode("play");
+    requestRender();
+    saveNow();
   });
   $("btnCloseSettings").addEventListener("click", () => $("settingsPanel").classList.remove("open"));
 }
 
-/* ─── 16. Top toolbar wiring ─────────────────────────────────────────── */
+/* ─── 16. Action + menu wiring ───────────────────────────────────────── */
 function wireToolbar() {
   $("btnUpload").addEventListener("click", () => $("fileInput").click());
   $("fileInput").addEventListener("change", e => {
@@ -1138,7 +1450,7 @@ function wireToolbar() {
     enterMode(rt.mode === "eyedrop" ? "play" : "eyedrop");
   });
   $("btnResetView").addEventListener("click", () => { fitView(); requestRender(); });
-  $("btnSettings").addEventListener("click", () => $("settingsPanel").classList.toggle("open"));
+  $("menuButton").addEventListener("click", () => $("settingsPanel").classList.toggle("open"));
 }
 
 /* ─── 17. Export / Import ────────────────────────────────────────────── */
@@ -1155,16 +1467,24 @@ function exportJson() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   toast("Exported.");
 }
-function importStateJson(text) {
+function importStateJson(text, filename) {
   const parsed = JSON.parse(text);
   if (!parsed || parsed.version !== STATE_VERSION) {
     toast("Unsupported export version.");
     return;
   }
+  // Imports always create a new maze entry so we don't silently clobber
+  // the current one in the library.
+  snapshotCurrent();
+  const name = filename
+    ? filename.replace(/\.[^.]+$/, "")
+    : mazeAutoName(parsed, "Imported maze");
+  createNewMaze(name, defaultState());
   adoptState(parsed);
+  renderMazeList();
 }
-// Adopt a state object (from import or storage). Loads the image if any,
-// rebuilds derived runtime, refreshes the UI.
+// Adopt a state object (from import, library switch, or storage). Loads the
+// image if any, rebuilds derived runtime, refreshes the UI.
 function adoptState(s) {
   state = Object.assign(defaultState(), s);
   // Defensive: ensure nested objects exist (older / partial exports)
@@ -1173,10 +1493,15 @@ function adoptState(s) {
   state.pathStyle = Object.assign(defaultState().pathStyle, state.pathStyle || {});
   state.theme = Object.assign(defaultState().theme, state.theme || {});
   state.walls = Array.isArray(state.walls) ? state.walls : [];
+  state.passable = Array.isArray(state.passable) ? state.passable : [];
   state.path = Array.isArray(state.path) ? state.path : [];
-  // hasStart older-export fallback: if missing but path/start look real, assume true.
+  // hasStart older-export fallback: if missing but trail/start look real, assume true.
   if (typeof s.hasStart !== "boolean") {
     state.hasStart = !!(s.image && (state.path.length > 0 || state.start.x || state.start.y));
+  }
+  // Mirror the adopted state back into the library entry that holds it.
+  if (library.currentId && library.mazes[library.currentId]) {
+    library.mazes[library.currentId].state = state;
   }
   bindStateToInputs();
   if (state.image && state.image.dataUrl) {
@@ -1213,21 +1538,55 @@ window.addEventListener("keyup", e => {
 });
 window.addEventListener("blur", () => rt.keys.clear());
 
-/* ─── 19. Input: D-pad pointer events ────────────────────────────────── */
-function wireDpad() {
-  document.querySelectorAll("#mobileDpad button[data-dir]").forEach(btn => {
-    const dir = btn.dataset.dir;
-    btn.addEventListener("pointerdown", e => {
-      btn.setPointerCapture(e.pointerId);
-      btn.classList.add("pressed");
-      rt.dpad.add(dir);
-      e.preventDefault();
-    });
-    const release = () => { btn.classList.remove("pressed"); rt.dpad.delete(dir); };
-    btn.addEventListener("pointerup", release);
-    btn.addEventListener("pointercancel", release);
-    btn.addEventListener("pointerleave", release);
+/* ─── 19. Input: analog joystick ─────────────────────────────────────── */
+function wireJoystick() {
+  const pad = $("joystick");
+  const knob = $("joystickKnob");
+  const j = { active: false, pid: null, cx: 0, cy: 0, r: 1 };
+  function snapshotCenter() {
+    const rect = pad.getBoundingClientRect();
+    j.cx = rect.left + rect.width / 2;
+    j.cy = rect.top + rect.height / 2;
+    j.r = Math.max(1, rect.width / 2);
+  }
+  function update(ev) {
+    let dx = ev.clientX - j.cx;
+    let dy = ev.clientY - j.cy;
+    const len = Math.hypot(dx, dy);
+    if (len > j.r) { dx = (dx / len) * j.r; dy = (dy / len) * j.r; }
+    knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+    rt.joystick.x = dx / j.r;
+    rt.joystick.y = dy / j.r;
+  }
+  function release() {
+    j.active = false;
+    j.pid = null;
+    rt.joystick.x = 0;
+    rt.joystick.y = 0;
+    knob.style.transform = "translate(-50%, -50%)";
+  }
+  pad.addEventListener("pointerdown", e => {
+    pad.setPointerCapture(e.pointerId);
+    j.active = true;
+    j.pid = e.pointerId;
+    snapshotCenter();
+    update(e);
+    e.preventDefault();
   });
+  pad.addEventListener("pointermove", e => {
+    if (!j.active || e.pointerId !== j.pid) return;
+    update(e);
+    e.preventDefault();
+  });
+  function endIfMatch(e) {
+    if (!j.active || e.pointerId !== j.pid) return;
+    try { pad.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+    release();
+  }
+  pad.addEventListener("pointerup", endIfMatch);
+  pad.addEventListener("pointercancel", endIfMatch);
+  pad.addEventListener("lostpointercapture", e => { if (e.pointerId === j.pid) release(); });
+  window.addEventListener("blur", release);
 }
 
 /* ─── 20. Input: canvas pointer events (pan, pinch, click-tools) ─────── */
@@ -1315,6 +1674,7 @@ function handleCanvasClick(ix, iy) {
   if (rt.mode === "set-start") setStartAt(ix, iy);
   else if (rt.mode === "reposition") repositionAt(ix, iy);
   else if (rt.mode === "eyedrop") eyedropAt(ix, iy);
+  else if (rt.mode === "eyedrop-passable") eyedropPassableAt(ix, iy);
 }
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -1369,7 +1729,7 @@ function wireGlobalImport() {
     // Also accept pasted JSON text
     const text = e.clipboardData.getData("text/plain");
     if (text && text.trim().startsWith("{")) {
-      try { importStateJson(text); } catch (_) { /* ignore */ }
+      try { importStateJson(text, null); } catch (_) { /* ignore */ }
     }
   });
 }
@@ -1385,16 +1745,20 @@ function init() {
   // 2. Wire UI
   wireToolbar();
   wireSettings();
-  wireDpad();
+  wireJoystick();
   wireCanvasPointers();
   wireUndoSlider();
   wireGlobalImport();
 
-  // 3. Try to restore the last session
-  if (loadFromStorage()) {
-    // adoptState already kicked off the image load if there was one
+  // 3. Try to restore the last session (or migrate the legacy slot)
+  if (loadLibrary() && library.currentId && library.mazes[library.currentId]) {
+    adoptState(library.mazes[library.currentId].state);
   } else {
+    // Fresh user: seed an empty maze so the library always has one entry.
+    createNewMaze("New maze", defaultState());
+    state = library.mazes[library.currentId].state;
     bindStateToInputs();
+    saveNow();
   }
 
   // 4. Start the render loop
@@ -1411,12 +1775,14 @@ init();
 window.MazeOfAnything = {
   get state() { return state; },
   set state(v) { state = v; },
+  get library() { return library; },
   rt,
   isWall, playerCollides, movePlayer,
-  setStartAt, repositionAt, eyedropAt,
+  setStartAt, repositionAt, eyedropAt, eyedropPassableAt,
   rewindByDistance,
   canvasToImage, imageToCanvas,
   loadImageFromDataUrl, fitView, exportJson, adoptState,
+  switchToMaze, deleteMaze, createNewMaze,
 };
 </script>
 </body>
