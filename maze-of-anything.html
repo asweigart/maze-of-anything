@@ -121,6 +121,33 @@ main {
 #emptyHint p { margin: 4px 0; }
 #emptyHint .byline { font-size: 12px; }
 #emptyHint a { color: var(--accent); pointer-events: auto; }
+#emptyHint .controls {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  margin: 12px auto;
+  text-align: left;
+  font-size: 12px;
+  max-width: 460px;
+}
+#emptyHint .controls h3 {
+  grid-column: 1 / -1;
+  margin: 8px 0 2px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg);
+}
+#emptyHint .controls kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--fg);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
 
 /* ── Toast for transient messages ──────────────────────────────────────── */
 #toast {
@@ -376,8 +403,28 @@ main {
     <div id="emptyHint">
       <h2>Maze of Anything</h2>
       <p class="byline">Created by Al Sweigart <a href="https://inventwithpython.com" target="_blank" rel="noopener noreferrer">https://inventwithpython.com</a></p>
-      <p>Tap the ☰ menu, then Upload — or drag-drop / paste (Ctrl/⌘+V) a maze image to begin.</p>
-      <p>You can also import a previously exported <code>.json</code> file.</p>
+      <p>Open the ☰ menu, then Upload, From URL, or drag-drop / paste a maze image. You can also import a previously exported <code>.json</code> file.</p>
+      <p>No maze handy? Open the ☰ menu → Mazes → <strong>Add Demo Maze</strong> for a built-in one to try.</p>
+
+      <div class="controls">
+        <h3>Mouse &amp; touch</h3>
+        <div>Joystick (bottom-right)</div><div>Move the player</div>
+        <div>PASS button / hold <kbd>Space</kbd></div><div>Walk through walls</div>
+        <div>Tap maze while holding PASS</div><div>Travel straight to that point</div>
+        <div>Undo slider (bottom-left)</div><div>Hold to retrace; release to stop</div>
+        <div>Click + drag canvas</div><div>Pan the view</div>
+        <div>Scroll wheel / pinch</div><div>Zoom</div>
+        <div>Drag-drop or <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>V</kbd></div><div>Load a maze image or .json</div>
+
+        <h3>Keyboard</h3>
+        <div><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> / arrow keys</div><div>Move the player</div>
+        <div><kbd>Space</kbd></div><div>Hold to walk through walls</div>
+        <div><kbd>Q</kbd> / <kbd>,</kbd> · <kbd>E</kbd> / <kbd>.</kbd></div><div>Smooth rotate left / right (hold)</div>
+        <div><kbd>&lt;</kbd> · <kbd>&gt;</kbd></div><div>Rotate 90° left / right per press</div>
+        <div><kbd>-</kbd> · <kbd>=</kbd></div><div>Zoom out / in (hold)</div>
+        <div><kbd>0</kbd></div><div>Reset zoom &amp; rotation (fit view)</div>
+      </div>
+
       <p>This free app works offline. Just save this .html file.</p>
     </div>
 
@@ -416,6 +463,7 @@ main {
           <button id="btnResetView" title="Recenter and zoom to fit">Fit view</button>
         </div>
         <div class="row">
+          <button id="btnSetStart" title="Click on the maze to set the player's start position">Set start</button>
           <button id="btnReposition" title="Click on the maze to teleport the player">Reposition</button>
           <button id="btnEyedrop" title="Click on the maze to add a wall color">Eyedrop wall</button>
         </div>
@@ -435,26 +483,7 @@ main {
         <div id="mazeList"></div>
         <div class="row">
           <button id="btnNewMaze">New blank maze</button>
-        </div>
-      </details>
-
-      <details>
-        <summary>View</summary>
-        <div class="row">
-          <label>Zoom</label>
-          <input type="range" id="zoomSlider" min="0.1" max="10" step="0.05" value="1" style="flex:1">
-          <button id="btnZoomOut">−</button>
-          <button id="btnZoomIn">+</button>
-        </div>
-        <div class="row">
-          <label>Rotation</label>
-          <input type="range" id="rotateSlider" min="-180" max="180" step="1" value="0" style="flex:1">
-          <button id="btnRotL" title="Rotate −90°">⟲</button>
-          <button id="btnRotR" title="Rotate +90°">⟳</button>
-        </div>
-        <div class="row">
-          <button id="btnResetView2">Reset view</button>
-          <button id="btnSetStart">Set start</button>
+          <button id="btnAddDemo" title="Add a built-in demo maze to your library">Add Demo Maze</button>
         </div>
       </details>
 
@@ -588,6 +617,12 @@ const ROT_DEG_PER_SEC = 90;
 const ZOOM_FACTOR_PER_SEC = 2.0;
 const SAVE_DEBOUNCE_MS = 500;
 const TOAST_MS = 2200;
+
+// Built-in demo maze (a classic black-on-white maze). Embedded as a data URI
+// so the app stays a single offline file. The "Add Demo Maze" button drops
+// this into the user's library.
+const DEMO_MAZE_NAME = "Demo maze";
+const DEMO_MAZE_DATA_URI = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAp0AAAKeAQMAAADdjzLTAAAAAXNSR0IB2cksfwAAAAlwSFlzAAALEwAACxMBAJqcGAAAAAZQTFRF////AAAAVcLTfgAAApRJREFUeJzt3EFu2zAQBVDpBL3/LeMbtE6sejSaob1IgADzCBBkReoF0N+wpOR9+4GyQ6FQ6Pehfz7e+9tvzfuaC71dr8drR381L7b/KhQKhUKhUOgo9LT42rfztf3/5H5enAMtg8ihHDcUoVzugUKhUCgUCp2GftbVBmG3GIuLuGcfmkJoHv6lrcJ8tFAoFAqFQqFz0G6jcLUQy5uM5/uhTQixvgot3QeFQqFQKBQ6Ci0OqZ/1GKs3C6v7oSmMVwF1/WtQUCgUCoVCoXPQtzYNq0XatuWFGjQFEx/6KpTFGBQKhUKhUOhItNwYjKXaMLwu1KBFUOnBl9e7OVAoFAqFQqEj0dUBdhyPpXohs/zqaB4aSw6iCrGaH1ooFAqFQqHQUehnrQ6x49iWxrfmWnlqPhO9l9yPbR6vxh4tFAqFQqFQ6By0WpDda3WIvfqhpZdfxQ9CU0hdcFV4zXwoFAqFQqHQUeilXg+tn/1Y6kUdND3oKoh4LZciLCgUCoVCodBZ6OrQujrUznMPY4fm/0gcbQyl68cSw4JCoVAoFAodhebD6lxffdS+Xe6HpoByrcKI14pxKBQKhUKh0FFo+0Jl/yOf1xbaBlWF0AWTWygUCoVCodBx6Orjn1cH2/UiDRoCWvW7ksODQqFQKBQKnYi2HwXF8ViqRdwO7V7EeKft+lAoFAqFQqHT0Dd+1PNr3lHXL2FCb+cHfi/52gksAkvzoFAoFAqFQsehy03D/HLmca3uQ8ODX4WRx6rxRwuFQqFQKBQ6Cm0/EIr96sXMvEi7Qbug4r+7wLqwoFAoFAqFQqehp7pakG3bejPx8lbnbDQ+9CqIVVhpHhQKhUKhUOgcdPWReiz5pcx+3nj0BwoUCv316F/3WGw0uFfFowAAAABJRU5ErkJggg==";
 
 /* ─── 2. State ───────────────────────────────────────────────────────────
    Single source of truth for the *current* maze. Everything serializable
@@ -1111,8 +1146,6 @@ function fitView() {
   state.view.rotationDeg = 0;
   state.view.panX = rt.cssW / 2;
   state.view.panY = rt.cssH / 2;
-  $("zoomSlider").value = state.view.zoom;
-  $("rotateSlider").value = 0;
   scheduleSave();
 }
 
@@ -1560,8 +1593,6 @@ function bindStateToInputs() {
   $("playerColor").value = state.player.color;
   $("toleranceSlider").value = state.tolerance;
   $("toleranceVal").textContent = state.tolerance;
-  $("zoomSlider").value = state.view.zoom;
-  $("rotateSlider").value = state.view.rotationDeg;
   $("pathVisible").checked = state.pathStyle.visible;
   $("pathColor").value = state.pathStyle.color;
   $("pathWidth").value = state.pathStyle.width;
@@ -1584,12 +1615,6 @@ function wireSettings() {
     requestRender();
     scheduleSave();
   });
-  $("zoomSlider").addEventListener("input", e => {
-    state.view.zoom = +e.target.value; requestRender(); scheduleSave();
-  });
-  $("rotateSlider").addEventListener("input", e => {
-    state.view.rotationDeg = +e.target.value; requestRender(); scheduleSave();
-  });
   $("pathVisible").addEventListener("input", e => { state.pathStyle.visible = e.target.checked; requestRender(); scheduleSave(); });
   $("pathColor").addEventListener("input", e => { state.pathStyle.color = e.target.value; requestRender(); scheduleSave(); });
   $("pathWidth").addEventListener("input", e => { state.pathStyle.width = +e.target.value; requestRender(); scheduleSave(); });
@@ -1607,11 +1632,6 @@ function wireSettings() {
   $("bgReset").addEventListener("click", () => { state.theme.bg = null; applyTheme(); requestRender(); scheduleSave(); });
   $("fgReset").addEventListener("click", () => { state.theme.fg = null; applyTheme(); requestRender(); scheduleSave(); });
 
-  $("btnZoomIn").addEventListener("click", () => zoomBy(1.25));
-  $("btnZoomOut").addEventListener("click", () => zoomBy(0.8));
-  $("btnRotL").addEventListener("click", () => rotateBy(-90));
-  $("btnRotR").addEventListener("click", () => rotateBy(90));
-  $("btnResetView2").addEventListener("click", () => { fitView(); requestRender(); });
   $("btnSetStart").addEventListener("click", () => enterMode("set-start"));
   $("btnEyedrop2").addEventListener("click", () => enterMode("eyedrop"));
   $("btnEyedropPassable").addEventListener("click", () => enterMode("eyedrop-passable"));
@@ -1626,6 +1646,18 @@ function wireSettings() {
     enterMode("play");
     requestRender();
     saveNow();
+  });
+  $("btnAddDemo").addEventListener("click", () => {
+    // Mirror the upload path: create a fresh library entry, then run the
+    // image through loadImageFromDataUrl with the "set-start" callback so
+    // the user is prompted to click their starting point on the maze.
+    snapshotCurrent();
+    const fresh = defaultState();
+    createNewMaze(DEMO_MAZE_NAME, fresh);
+    state = fresh;
+    bindStateToInputs();
+    renderMazeList();
+    loadImageFromDataUrl(DEMO_MAZE_DATA_URI, () => enterMode("set-start"));
   });
   $("btnReset").addEventListener("click", () => {
     if (!confirm("Reset all settings, walls, trail, and saved data?")) return;
@@ -1806,6 +1838,13 @@ window.addEventListener("keydown", e => {
     return;
   }
   if (e.code in ROT_CODE_DIR) {
+    // Shift + Comma (= "<") and Shift + Period (= ">") snap to 90° per press.
+    // Unmodified Comma/Period and Q/E remain smooth held-key rotations.
+    if (e.shiftKey && (e.code === "Comma" || e.code === "Period")) {
+      if (!e.repeat) rotateBy(ROT_CODE_DIR[e.code] * 90);
+      e.preventDefault();
+      return;
+    }
     rt.rotCodes.add(e.code);
     e.preventDefault();
     return;
@@ -2031,7 +2070,6 @@ function zoomBy(factor) {
 
 function rotateBy(deltaDeg) {
   state.view.rotationDeg = ((state.view.rotationDeg + deltaDeg + 540) % 360) - 180;
-  $("rotateSlider").value = state.view.rotationDeg;
   requestRender();
   scheduleSave();
 }
@@ -2042,7 +2080,6 @@ function zoomToPoint(newZoom, canvasPt) {
   const after = imageToCanvas(before.x, before.y);
   state.view.panX += canvasPt.x - after.x;
   state.view.panY += canvasPt.y - after.y;
-  $("zoomSlider").value = state.view.zoom;
   requestRender();
   scheduleSave();
 }
