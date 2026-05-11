@@ -119,6 +119,8 @@ main {
 }
 #emptyHint h2 { margin: 0 0 8px; color: var(--fg); }
 #emptyHint p { margin: 4px 0; }
+#emptyHint .byline { font-size: 12px; }
+#emptyHint a { color: var(--accent); pointer-events: auto; }
 
 /* ── Toast for transient messages ──────────────────────────────────────── */
 #toast {
@@ -373,8 +375,10 @@ main {
 
     <div id="emptyHint">
       <h2>Maze of Anything</h2>
+      <p class="byline">Created by Al Sweigart <a href="https://inventwithpython.com" target="_blank" rel="noopener noreferrer">https://inventwithpython.com</a></p>
       <p>Tap the ☰ menu, then Upload — or drag-drop / paste (Ctrl/⌘+V) a maze image to begin.</p>
       <p>You can also import a previously exported <code>.json</code> file.</p>
+      <p>This free app works offline. Just save this .html file.</p>
     </div>
 
     <div id="modeBanner"></div>
@@ -578,6 +582,10 @@ const LIBRARY_VERSION = 1;
 const LIBRARY_KEY = "maze-of-anything:library:v1";
 const LEGACY_STORAGE_KEY = "maze-of-anything:v1";
 const MAX_REWIND_PX_PER_SEC = 600;
+const ROT_DEG_PER_SEC = 90;
+// Multiplicative zoom rate. zoom *= ZOOM_FACTOR_PER_SEC^(dir * dt), so the
+// view doubles (or halves) once per second of continuous zoom-in (or -out).
+const ZOOM_FACTOR_PER_SEC = 2.0;
 const SAVE_DEBOUNCE_MS = 500;
 const TOAST_MS = 2200;
 
@@ -617,6 +625,8 @@ const rt = {
   imgH: 0,
   mode: "play",        // "play" | "set-start" | "reposition" | "eyedrop" | "eyedrop-passable"
   keys: new Set(),     // currently-held movement keys (normalized to 'up'|'down'|'left'|'right')
+  rotCodes: new Set(), // currently-held rotation keys, by event.code
+  zoomCodes: new Set(),// currently-held zoom keys, by event.code
   joystick: { x: 0, y: 0 }, // canvas-space vector from joystick, magnitude in [0,1]
   undoValue: 0,        // 0..100, latest undo slider value
   pass: false,         // PASS button or spacebar held: walk through walls
@@ -1197,6 +1207,21 @@ function frame(ts) {
   const dt = lastTs ? Math.min(0.05, (ts - lastTs) / 1000) : 0;
   lastTs = ts;
 
+  // Continuous rotation while a rotate key is held. Multiple held keys sum,
+  // so opposite directions cancel — same as how movement keys behave.
+  if (rt.rotCodes.size > 0) {
+    let rotDir = 0;
+    for (const code of rt.rotCodes) rotDir += ROT_CODE_DIR[code] || 0;
+    if (rotDir !== 0) rotateBy(rotDir * ROT_DEG_PER_SEC * dt);
+  }
+  // Continuous zoom while a zoom key is held. Multiplicative so the rate is
+  // perceptually constant regardless of current zoom level.
+  if (rt.zoomCodes.size > 0) {
+    let zoomDir = 0;
+    for (const code of rt.zoomCodes) zoomDir += ZOOM_CODE_DIR[code] || 0;
+    if (zoomDir !== 0) zoomBy(Math.pow(ZOOM_FACTOR_PER_SEC, zoomDir * dt));
+  }
+
   if (state.hasStart && rt.mode === "play") {
     if (rt.undoValue > 0) {
       const dist = (rt.undoValue / 100) * MAX_REWIND_PX_PER_SEC * dt;
@@ -1757,9 +1782,20 @@ function setPassHeld(held) {
   }
 }
 
-// Single-press shortcuts: keys whose handler fires once per press (not while
-// held). Q / , / < rotate counterclockwise; E / . / > rotate clockwise.
-// - / _ zoom out; = / + zoom in.
+// Keyed by event.code so that pressing Shift doesn't desynchronize keydown
+// and keyup. KeyQ / Comma rotate counterclockwise while held; KeyE / Period
+// rotate clockwise. Minus zooms out; Equal zooms in. Used by the frame()
+// loop for smooth continuous rotation and zoom.
+const ROT_CODE_DIR = {
+  "KeyQ": -1, "Comma":  -1,
+  "KeyE":  1, "Period":  1,
+};
+const ZOOM_CODE_DIR = {
+  "Minus": -1, // - and _
+  "Equal":  1, // = and +
+};
+
+// Single-press shortcuts: 0 / ) reset view.
 window.addEventListener("keydown", e => {
   // Don't hijack typing in inputs
   const tag = (e.target && e.target.tagName) || "";
@@ -1769,18 +1805,20 @@ window.addEventListener("keydown", e => {
     e.preventDefault();
     return;
   }
+  if (e.code in ROT_CODE_DIR) {
+    rt.rotCodes.add(e.code);
+    e.preventDefault();
+    return;
+  }
+  if (e.code in ZOOM_CODE_DIR) {
+    rt.zoomCodes.add(e.code);
+    e.preventDefault();
+    return;
+  }
   if (!e.repeat) {
     switch (e.key) {
-      case "q": case "Q":
-      case ",": case "<":
-        rotateBy(-90); e.preventDefault(); return;
-      case "e": case "E":
-      case ".": case ">":
-        rotateBy(90); e.preventDefault(); return;
-      case "-": case "_":
-        zoomBy(0.8); e.preventDefault(); return;
-      case "=": case "+":
-        zoomBy(1.25); e.preventDefault(); return;
+      case "0": case ")":
+        fitView(); requestRender(); e.preventDefault(); return;
     }
   }
   const dir = KEY_MAP[e.key];
@@ -1795,10 +1833,25 @@ window.addEventListener("keyup", e => {
     e.preventDefault();
     return;
   }
+  if (e.code in ROT_CODE_DIR) {
+    rt.rotCodes.delete(e.code);
+    e.preventDefault();
+    return;
+  }
+  if (e.code in ZOOM_CODE_DIR) {
+    rt.zoomCodes.delete(e.code);
+    e.preventDefault();
+    return;
+  }
   const dir = KEY_MAP[e.key];
   if (dir) rt.keys.delete(dir);
 });
-window.addEventListener("blur", () => { rt.keys.clear(); setPassHeld(false); });
+window.addEventListener("blur", () => {
+  rt.keys.clear();
+  rt.rotCodes.clear();
+  rt.zoomCodes.clear();
+  setPassHeld(false);
+});
 
 /* ─── 19. Input: analog joystick ─────────────────────────────────────── */
 function wireJoystick() {
