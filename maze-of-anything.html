@@ -263,12 +263,38 @@ main {
   box-shadow: 0 1px 4px rgba(0,0,0,0.3);
 }
 
+/* ── PASS button: hold to walk through walls (mirrors the joystick) ───── */
+#passButton {
+  position: absolute;
+  bottom: 24px;
+  left: 24px;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: rgba(128, 128, 128, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  z-index: 30;
+  cursor: pointer;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+}
+#passButton.pressed {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
 /* ── Undo slider: compact, snaps to 0 on release ───────────────────────── */
 #undoSliderWrap {
   position: absolute;
   bottom: 24px;
-  left: 24px;
-  width: min(240px, 60vw);
+  left: 136px;             /* sit beside the PASS button */
+  width: min(200px, calc(100vw - 296px)); /* compact; leaves room for the joystick */
+  min-width: 60px;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -332,6 +358,10 @@ main {
       <div id="joystickKnob"></div>
     </div>
 
+    <!-- PASS button: hold to walk through walls. Desktop: hold spacebar.
+         While held, tapping the maze travels straight there at player speed. -->
+    <button id="passButton" type="button" aria-label="Pass through walls (hold)" title="Hold to walk through walls. Tap the maze to travel there.">PASS</button>
+
     <!-- Undo slider: snaps to 0 on release, retraces while held > 0. -->
     <div id="undoSliderWrap">
       <label for="undoSlider">Undo</label>
@@ -351,6 +381,14 @@ main {
       <div class="row">
         <button id="btnReposition" title="Click on the maze to teleport the player">Reposition</button>
         <button id="btnEyedrop" title="Click on the maze to add a wall color">Eyedrop wall</button>
+      </div>
+      <div class="row">
+        <label>Barebones</label>
+        <input type="checkbox" id="barebonesToggle">
+      </div>
+      <div class="row">
+        <button id="btnExportBarebonesPng" title="Download a black-and-white PNG of the maze">Export Barebones PNG</button>
+        <button id="btnExportBarebonesWebp" title="Download a black-and-white WebP of the maze">Export Barebones WebP</button>
       </div>
 
       <hr>
@@ -406,7 +444,6 @@ main {
       <div id="wallList"></div>
       <div class="row">
         <button id="btnEyedrop2">Eyedrop wall</button>
-        <button id="btnClearWalls" class="danger">Clear all</button>
       </div>
 
       <hr>
@@ -415,7 +452,6 @@ main {
       <div id="passableList"></div>
       <div class="row">
         <button id="btnEyedropPassable">Eyedrop passable</button>
-        <button id="btnClearPassable" class="danger">Clear all</button>
       </div>
 
       <hr>
@@ -522,6 +558,7 @@ function defaultState() {
     view: { zoom: 1, panX: 0, panY: 0, rotationDeg: 0 },
     pathStyle: { visible: true, color: "#ff7a59", width: 2, dash: "solid" },
     theme: { mode: "auto", bg: null, fg: null },
+    barebones: false, // render walls/passable as pure black/white
   };
 }
 let state = defaultState();
@@ -541,6 +578,11 @@ const rt = {
   keys: new Set(),     // currently-held movement keys (normalized to 'up'|'down'|'left'|'right')
   joystick: { x: 0, y: 0 }, // canvas-space vector from joystick, magnitude in [0,1]
   undoValue: 0,        // 0..100, latest undo slider value
+  pass: false,         // PASS button or spacebar held: walk through walls
+  passGrace: false,    // released PASS while still inside a wall; keep walking
+                       // freely until the player is no longer overlapping a wall
+  passTarget: null,    // {x,y} in image-space; while pass is held + a tap occurred
+  barebonesCanvas: null, // cached 2-color rasterization of the maze, null = stale
   panning: false,
   panLast: null,       // {x,y} last pointer position during pan
   panMoved: false,
@@ -822,6 +864,7 @@ function loadImageFromDataUrl(dataUrl, onReady, skipFit) {
       rt.pixelData = null;
     }
     state.image = { dataUrl, naturalWidth: rt.imgW, naturalHeight: rt.imgH };
+    invalidateBarebones();
     emptyHint.style.display = "none";
     if (!skipFit) fitView();
     if (onReady) onReady();
@@ -913,12 +956,47 @@ const COLLISION_DIRS = (() => {
   }
   return out;
 })();
-function playerCollides(x, y) {
+// Strict collision check: ignores rt.pass and rt.passGrace. Used to decide
+// whether the player has fully escaped a wall (so grace can end).
+function rawPlayerCollides(x, y) {
   const r = state.player.radius;
   for (const d of COLLISION_DIRS) {
     if (isWall(x + d.x * r, y + d.y * r)) return true;
   }
   return false;
+}
+
+function playerCollides(x, y) {
+  // PASS held → walls and image bounds ignored. passGrace is the post-release
+  // window where the player is mid-wall and shouldn't get stuck.
+  if (rt.pass || rt.passGrace) return false;
+  return rawPlayerCollides(x, y);
+}
+
+// Invalidate the cached 2-color rasterization. Called whenever inputs to
+// isWall() change (image, walls, passable, tolerance).
+function invalidateBarebones() { rt.barebonesCanvas = null; }
+
+// Build (or rebuild) the 2-color maze image used by barebones mode and the
+// barebones export buttons. Reads rt.pixelData via isWall(), writes pure
+// black for walls and pure white for everything else.
+function rebuildBarebonesImage() {
+  if (!rt.pixelData) { rt.barebonesCanvas = null; return; }
+  const off = document.createElement("canvas");
+  off.width = rt.imgW;
+  off.height = rt.imgH;
+  const offCtx = off.getContext("2d");
+  const out = offCtx.createImageData(rt.imgW, rt.imgH);
+  const data = out.data;
+  for (let y = 0; y < rt.imgH; y++) {
+    for (let x = 0; x < rt.imgW; x++) {
+      const i = (y * rt.imgW + x) * 4;
+      const v = isWall(x, y) ? 0 : 255;
+      data[i] = v; data[i + 1] = v; data[i + 2] = v; data[i + 3] = 255;
+    }
+  }
+  offCtx.putImageData(out, 0, 0);
+  rt.barebonesCanvas = off;
 }
 
 /* ─── 10. Render loop ────────────────────────────────────────────────────
@@ -981,9 +1059,15 @@ function render() {
   const c = imgCenter();
   ctx.translate(-c.x, -c.y);
 
-  // Image
+  // Image — barebones mode swaps in a 2-color rasterization.
   ctx.imageSmoothingEnabled = state.view.zoom < 1.5;
-  ctx.drawImage(rt.imgEl, 0, 0);
+  if (state.barebones) {
+    if (!rt.barebonesCanvas && rt.pixelData) rebuildBarebonesImage();
+    if (rt.barebonesCanvas) ctx.drawImage(rt.barebonesCanvas, 0, 0);
+    else ctx.drawImage(rt.imgEl, 0, 0);
+  } else {
+    ctx.drawImage(rt.imgEl, 0, 0);
+  }
 
   // Trail. Line widths and dash patterns are specified in image-space units,
   // then scaled by 1/zoom so they appear constant on screen.
@@ -1050,8 +1134,24 @@ function frame(ts) {
     } else {
       const dir = currentDirection();
       if (dir.mag > 0) {
+        // Joystick / keys take priority and cancel any pending pass-tap travel.
+        rt.passTarget = null;
         const step = state.player.speed * dt * dir.mag;
         movePlayer(dir.x * step, dir.y * step);
+        requestRender();
+      } else if (rt.pass && rt.passTarget) {
+        // Animated straight-line travel toward the tapped point. Collision
+        // is bypassed because rt.pass is held.
+        const tx = rt.passTarget.x, ty = rt.passTarget.y;
+        const dx = tx - state.player.x, dy = ty - state.player.y;
+        const dist = Math.hypot(dx, dy);
+        const step = state.player.speed * dt;
+        if (dist <= step || dist < 0.5) {
+          movePlayer(dx, dy);
+          rt.passTarget = null;
+        } else {
+          movePlayer((dx / dist) * step, (dy / dist) * step);
+        }
         requestRender();
       }
     }
@@ -1104,6 +1204,11 @@ function movePlayer(dx, dy) {
   state.player.x = toX;
   state.player.y = toY;
   recordMove(fromX, fromY, toX, toY);
+  // Once the player has fully walked clear of any wall, end the post-release
+  // grace so normal blocking resumes.
+  if (rt.passGrace && !rt.pass && !rawPlayerCollides(toX, toY)) {
+    rt.passGrace = false;
+  }
 }
 
 function currentSegment() {
@@ -1237,6 +1342,7 @@ function eyedropAt(ix, iy) {
   state.walls.push(c);
   enterMode("play");
   renderWallList();
+  invalidateBarebones();
   requestRender();
   scheduleSave();
 }
@@ -1255,6 +1361,7 @@ function eyedropPassableAt(ix, iy) {
   state.passable.push(c);
   enterMode("play");
   renderPassableList();
+  invalidateBarebones();
   requestRender();
   scheduleSave();
 }
@@ -1285,6 +1392,7 @@ function renderWallList() {
   renderSwatchList(wallListEl, state.walls, idx => {
     state.walls.splice(idx, 1);
     renderWallList();
+    invalidateBarebones();
     requestRender();
     scheduleSave();
   });
@@ -1294,6 +1402,7 @@ function renderPassableList() {
   renderSwatchList(passableListEl, state.passable, idx => {
     state.passable.splice(idx, 1);
     renderPassableList();
+    invalidateBarebones();
     requestRender();
     scheduleSave();
   });
@@ -1361,6 +1470,7 @@ function bindStateToInputs() {
   $("pathColor").value = state.pathStyle.color;
   $("pathWidth").value = state.pathStyle.width;
   $("pathDash").value = state.pathStyle.dash;
+  $("barebonesToggle").checked = !!state.barebones;
   renderWallList();
   renderPassableList();
   renderMazeList();
@@ -1374,6 +1484,8 @@ function wireSettings() {
   $("toleranceSlider").addEventListener("input", e => {
     state.tolerance = +e.target.value;
     $("toleranceVal").textContent = state.tolerance;
+    invalidateBarebones();
+    requestRender();
     scheduleSave();
   });
   $("zoomSlider").addEventListener("input", e => {
@@ -1386,6 +1498,12 @@ function wireSettings() {
   $("pathColor").addEventListener("input", e => { state.pathStyle.color = e.target.value; requestRender(); scheduleSave(); });
   $("pathWidth").addEventListener("input", e => { state.pathStyle.width = +e.target.value; requestRender(); scheduleSave(); });
   $("pathDash").addEventListener("input", e => { state.pathStyle.dash = e.target.value; requestRender(); scheduleSave(); });
+  $("barebonesToggle").addEventListener("input", e => {
+    state.barebones = e.target.checked;
+    if (state.barebones) invalidateBarebones(); // force a fresh build on the next render
+    requestRender();
+    scheduleSave();
+  });
 
   $("themeMode").addEventListener("input", e => { state.theme.mode = e.target.value; applyTheme(); requestRender(); scheduleSave(); });
   $("bgColor").addEventListener("input", e => { state.theme.bg = e.target.value; applyTheme(); requestRender(); scheduleSave(); });
@@ -1400,9 +1518,7 @@ function wireSettings() {
   $("btnResetView2").addEventListener("click", () => { fitView(); requestRender(); });
   $("btnSetStart").addEventListener("click", () => enterMode("set-start"));
   $("btnEyedrop2").addEventListener("click", () => enterMode("eyedrop"));
-  $("btnClearWalls").addEventListener("click", () => { state.walls = []; renderWallList(); requestRender(); scheduleSave(); });
   $("btnEyedropPassable").addEventListener("click", () => enterMode("eyedrop-passable"));
-  $("btnClearPassable").addEventListener("click", () => { state.passable = []; renderPassableList(); requestRender(); scheduleSave(); });
   $("btnClearPath").addEventListener("click", () => { state.path = []; requestRender(); scheduleSave(); });
   $("btnNewMaze").addEventListener("click", () => {
     snapshotCurrent();
@@ -1450,6 +1566,8 @@ function wireToolbar() {
     enterMode(rt.mode === "eyedrop" ? "play" : "eyedrop");
   });
   $("btnResetView").addEventListener("click", () => { fitView(); requestRender(); });
+  $("btnExportBarebonesPng").addEventListener("click", () => exportBarebones("png"));
+  $("btnExportBarebonesWebp").addEventListener("click", () => exportBarebones("webp"));
   $("menuButton").addEventListener("click", () => $("settingsPanel").classList.toggle("open"));
 }
 
@@ -1466,6 +1584,28 @@ function exportJson() {
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   toast("Exported.");
+}
+
+// Export the 2-color barebones rendering of the maze at native resolution.
+// `format` is "png" or "webp". Always a clean image — no trail or player.
+function exportBarebones(format) {
+  if (!rt.pixelData) return toast("Load an image first.");
+  rebuildBarebonesImage();
+  if (!rt.barebonesCanvas) return toast("Could not build barebones image.");
+  const mime = format === "webp" ? "image/webp" : "image/png";
+  const ext  = format === "webp" ? "webp" : "png";
+  rt.barebonesCanvas.toBlob(blob => {
+    if (!blob) { toast("Export failed."); return; }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "maze-barebones." + ext;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast("Exported barebones " + ext.toUpperCase() + ".");
+  }, mime);
 }
 function importStateJson(text, filename) {
   const parsed = JSON.parse(text);
@@ -1495,6 +1635,8 @@ function adoptState(s) {
   state.walls = Array.isArray(state.walls) ? state.walls : [];
   state.passable = Array.isArray(state.passable) ? state.passable : [];
   state.path = Array.isArray(state.path) ? state.path : [];
+  state.barebones = !!state.barebones;
+  invalidateBarebones();
   // hasStart older-export fallback: if missing but trail/start look real, assume true.
   if (typeof s.hasStart !== "boolean") {
     state.hasStart = !!(s.image && (state.path.length > 0 || state.start.x || state.start.y));
@@ -1522,10 +1664,33 @@ const KEY_MAP = {
   "ArrowLeft": "left", "a": "left", "A": "left",
   "ArrowRight": "right", "d": "right", "D": "right",
 };
+function isSpaceKey(e) { return e.key === " " || e.code === "Space" || e.key === "Spacebar"; }
+
+function setPassHeld(held) {
+  rt.pass = !!held;
+  $("passButton").classList.toggle("pressed", rt.pass);
+  if (!rt.pass) {
+    rt.passTarget = null;
+    // If we let go while the player is mid-wall, leave the bypass on until
+    // they've walked clear; otherwise they'd be stuck inside the wall.
+    if (state.hasStart && rawPlayerCollides(state.player.x, state.player.y)) {
+      rt.passGrace = true;
+    }
+  } else {
+    // Re-pressing PASS supersedes any leftover grace.
+    rt.passGrace = false;
+  }
+}
+
 window.addEventListener("keydown", e => {
   // Don't hijack typing in inputs
   const tag = (e.target && e.target.tagName) || "";
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  if (isSpaceKey(e)) {
+    if (!e.repeat) setPassHeld(true);
+    e.preventDefault();
+    return;
+  }
   const dir = KEY_MAP[e.key];
   if (dir) {
     rt.keys.add(dir);
@@ -1533,10 +1698,15 @@ window.addEventListener("keydown", e => {
   }
 });
 window.addEventListener("keyup", e => {
+  if (isSpaceKey(e)) {
+    setPassHeld(false);
+    e.preventDefault();
+    return;
+  }
   const dir = KEY_MAP[e.key];
   if (dir) rt.keys.delete(dir);
 });
-window.addEventListener("blur", () => rt.keys.clear());
+window.addEventListener("blur", () => { rt.keys.clear(); setPassHeld(false); });
 
 /* ─── 19. Input: analog joystick ─────────────────────────────────────── */
 function wireJoystick() {
@@ -1587,6 +1757,30 @@ function wireJoystick() {
   pad.addEventListener("pointercancel", endIfMatch);
   pad.addEventListener("lostpointercapture", e => { if (e.pointerId === j.pid) release(); });
   window.addEventListener("blur", release);
+}
+
+/* ─── 19b. Input: PASS button (hold to walk through walls) ──────────── */
+function wirePassButton() {
+  const btn = $("passButton");
+  let pid = null;
+  btn.addEventListener("pointerdown", e => {
+    try { btn.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+    pid = e.pointerId;
+    setPassHeld(true);
+    e.preventDefault();
+  });
+  function end(e) {
+    if (pid !== null && e.pointerId !== pid) return;
+    try { btn.releasePointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+    pid = null;
+    setPassHeld(false);
+  }
+  btn.addEventListener("pointerup", end);
+  btn.addEventListener("pointercancel", end);
+  btn.addEventListener("lostpointercapture", end);
+  // Suppress synthetic click + space-activated click so PASS only "holds".
+  btn.addEventListener("click", e => { e.preventDefault(); });
+  btn.addEventListener("keydown", e => { if (isSpaceKey(e) || e.key === "Enter") e.preventDefault(); });
 }
 
 /* ─── 20. Input: canvas pointer events (pan, pinch, click-tools) ─────── */
@@ -1675,6 +1869,11 @@ function handleCanvasClick(ix, iy) {
   else if (rt.mode === "reposition") repositionAt(ix, iy);
   else if (rt.mode === "eyedrop") eyedropAt(ix, iy);
   else if (rt.mode === "eyedrop-passable") eyedropPassableAt(ix, iy);
+  else if (rt.mode === "play" && rt.pass && state.hasStart) {
+    // Tap-to-travel: while PASS is held, the player walks straight to the
+    // tapped point at the configured speed. The frame() loop animates it.
+    rt.passTarget = { x: ix, y: iy };
+  }
 }
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -1746,6 +1945,7 @@ function init() {
   wireToolbar();
   wireSettings();
   wireJoystick();
+  wirePassButton();
   wireCanvasPointers();
   wireUndoSlider();
   wireGlobalImport();
@@ -1781,8 +1981,10 @@ window.MazeOfAnything = {
   setStartAt, repositionAt, eyedropAt, eyedropPassableAt,
   rewindByDistance,
   canvasToImage, imageToCanvas,
-  loadImageFromDataUrl, fitView, exportJson, adoptState,
+  loadImageFromDataUrl, fitView, exportJson, exportBarebones, adoptState,
+  rebuildBarebonesImage, invalidateBarebones,
   switchToMaze, deleteMaze, createNewMaze,
+  setPassHeld,
 };
 </script>
 </body>
