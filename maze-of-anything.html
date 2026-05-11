@@ -546,7 +546,7 @@ main {
         <summary>Storage</summary>
         <p class="help">State auto-saves to your browser. To share a fresh maze, fully rewind the undo slider before exporting.</p>
         <div class="row">
-          <button id="btnReset" class="danger">Reset everything</button>
+          <button id="btnReset" class="danger">Delete and Reset Everything</button>
         </div>
       </details>
 
@@ -1584,8 +1584,8 @@ function wireSettings() {
 
   $("btnZoomIn").addEventListener("click", () => zoomBy(1.25));
   $("btnZoomOut").addEventListener("click", () => zoomBy(0.8));
-  $("btnRotL").addEventListener("click", () => { state.view.rotationDeg = ((state.view.rotationDeg - 90 + 540) % 360) - 180; $("rotateSlider").value = state.view.rotationDeg; requestRender(); scheduleSave(); });
-  $("btnRotR").addEventListener("click", () => { state.view.rotationDeg = ((state.view.rotationDeg + 90 + 540) % 360) - 180; $("rotateSlider").value = state.view.rotationDeg; requestRender(); scheduleSave(); });
+  $("btnRotL").addEventListener("click", () => rotateBy(-90));
+  $("btnRotR").addEventListener("click", () => rotateBy(90));
   $("btnResetView2").addEventListener("click", () => { fitView(); requestRender(); });
   $("btnSetStart").addEventListener("click", () => enterMode("set-start"));
   $("btnEyedrop2").addEventListener("click", () => enterMode("eyedrop"));
@@ -1757,6 +1757,9 @@ function setPassHeld(held) {
   }
 }
 
+// Single-press shortcuts: keys whose handler fires once per press (not while
+// held). Q / , / < rotate counterclockwise; E / . / > rotate clockwise.
+// - / _ zoom out; = / + zoom in.
 window.addEventListener("keydown", e => {
   // Don't hijack typing in inputs
   const tag = (e.target && e.target.tagName) || "";
@@ -1765,6 +1768,20 @@ window.addEventListener("keydown", e => {
     if (!e.repeat) setPassHeld(true);
     e.preventDefault();
     return;
+  }
+  if (!e.repeat) {
+    switch (e.key) {
+      case "q": case "Q":
+      case ",": case "<":
+        rotateBy(-90); e.preventDefault(); return;
+      case "e": case "E":
+      case ".": case ">":
+        rotateBy(90); e.preventDefault(); return;
+      case "-": case "_":
+        zoomBy(0.8); e.preventDefault(); return;
+      case "=": case "+":
+        zoomBy(1.25); e.preventDefault(); return;
+    }
   }
   const dir = KEY_MAP[e.key];
   if (dir) {
@@ -1957,6 +1974,13 @@ function zoomBy(factor) {
   if (!rt.imgEl) return;
   const newZoom = clamp(state.view.zoom * factor, 0.05, 20);
   zoomToPoint(newZoom, { x: rt.cssW / 2, y: rt.cssH / 2 });
+}
+
+function rotateBy(deltaDeg) {
+  state.view.rotationDeg = ((state.view.rotationDeg + deltaDeg + 540) % 360) - 180;
+  $("rotateSlider").value = state.view.rotationDeg;
+  requestRender();
+  scheduleSave();
 }
 function zoomToPoint(newZoom, canvasPt) {
   // Keep the image point under canvasPt fixed across the zoom change.
